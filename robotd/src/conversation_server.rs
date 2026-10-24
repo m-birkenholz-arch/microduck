@@ -1,8 +1,8 @@
 //! Streaming conversational audio endpoint owned by `robotd`.
 //!
-//! The ordinary JSON-RPC socket is intentionally not used for PCM. `duck-assistant`
-//! connects here, sends a one-byte command followed by raw 48 kHz mono S16LE frames,
-//! and `robotd` remains the process that opens the exclusive playback PCM.
+//! PCM stays off the ordinary JSON-RPC socket. `duck-assistant` keeps one local Unix
+//! connection and sends small framed commands; this module is the only side that opens
+//! the physical playback device.
 
 use std::io;
 use std::os::unix::fs::PermissionsExt;
@@ -13,14 +13,20 @@ use tokio::net::{UnixListener, UnixStream};
 
 use crate::conversation_audio::SpeechPlayback;
 
-/// Protocol commands. A new PLAY connection supersedes the previous utterance.
-pub const CMD_PLAY: u8 = 0x01;
-pub const CMD_STOP: u8 = 0x02;
+pub const CMD_OPEN: u8 = 1;
+pub const CMD_DATA: u8 = 2;
+pub const CMD_FINISH: u8 = 3;
+pub const CMD_STOP: u8 = 4;
+const MAX_FRAME: usize = 256 * 1024;
+
+enum AudioCommand {
+    Open,
+    Data(Vec<u8>),
+    Finish,
+    Stop,
+}
 
 /// Serve conversational playback until the task is cancelled.
-///
-/// One connection is one utterance. Keeping the stream bounded this way gives disconnect
-/// a useful meaning: EOF finishes naturally, while STOP (or a replacement PLAY) cuts now.
 pub async fn serve(path: PathBuf, device: String) -> io::Result<()> {
     if path.exists() {
         let _ = std::fs::remove_file(&path);
@@ -31,59 +37,73 @@ pub async fn serve(path: PathBuf, device: String) -> io::Result<()> {
 
     loop {
         let (stream, _) = listener.accept().await?;
-        let device = device.clone();
-        if let Err(error) = handle(stream, &device).await {
+        if let Err(error) = handle(stream, device.clone()).await {
             tracing::warn!(%error, "conversation audio client ended with an error");
         }
     }
 }
 
-async fn handle(mut stream: UnixStream, device: &str) -> io::Result<()> {
-    let command = stream.read_u8().await?;
-    match command {
-        CMD_STOP => Ok(()),
-        CMD_PLAY => play_stream(stream, device).await,
-        other => Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!("unknown conversation audio command {other:#04x}"),
-        )),
-    }
-}
-
-async fn play_stream(mut stream: UnixStream, device: &str) -> io::Result<()> {
-    // `aplay` and its stdin are blocking OS handles. All writes therefore live on a blocking
-    // worker so a slow codec can never occupy robotd's async IPC runtime.
-    let (tx, mut rx) = tokio::sync::mpsc::channel::<Vec<u8>>(8);
-    let device = device.to_owned();
+async fn handle(mut stream: UnixStream, device: String) -> io::Result<()> {
+    // The worker owns `SpeechPlayback`: blocking aplay writes never run on the async runtime.
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<AudioCommand>(8);
     let worker = tokio::task::spawn_blocking(move || -> io::Result<()> {
-        let mut playback = SpeechPlayback::open(&device)?;
-        while let Some(chunk) = rx.blocking_recv() {
-            playback.write_pcm(&chunk)?;
+        let mut playback: Option<SpeechPlayback> = None;
+        while let Some(command) = rx.blocking_recv() {
+            match command {
+                AudioCommand::Open => {
+                    if let Some(mut old) = playback.take() { old.stop(); }
+                    playback = Some(SpeechPlayback::open(&device)?);
+                }
+                AudioCommand::Data(pcm) => {
+                    let Some(active) = playback.as_mut() else {
+                        return Err(io::Error::new(io::ErrorKind::InvalidData, "DATA before OPEN"));
+                    };
+                    active.write_pcm(&pcm)?;
+                }
+                AudioCommand::Finish => {
+                    if let Some(active) = playback.take() { active.finish()?; }
+                }
+                AudioCommand::Stop => {
+                    if let Some(mut active) = playback.take() { active.stop(); }
+                }
+            }
         }
-        playback.finish()
+        if let Some(mut active) = playback { active.stop(); }
+        Ok(())
     });
 
-    let mut buf = vec![0u8; 3840]; // 40 ms at 48 kHz, mono S16LE.
     loop {
-        let n = stream.read(&mut buf).await?;
-        if n == 0 {
-            break;
-        }
-        // Preserve whole 16-bit samples. The assistant sends aligned chunks; rejecting a
-        // broken client is safer than shifting every following sample by one byte.
-        if n % 2 != 0 {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "odd PCM byte count"));
-        }
-        if tx.send(buf[..n].to_vec()).await.is_err() {
-            break;
-        }
+        let command = match stream.read_u8().await {
+            Ok(command) => command,
+            Err(error) if error.kind() == io::ErrorKind::UnexpectedEof => break,
+            Err(error) => return Err(error),
+        };
+        let message = match command {
+            CMD_OPEN => AudioCommand::Open,
+            CMD_FINISH => AudioCommand::Finish,
+            CMD_STOP => AudioCommand::Stop,
+            CMD_DATA => {
+                let len = stream.read_u32_le().await? as usize;
+                if len > MAX_FRAME || len % 2 != 0 {
+                    return Err(io::Error::new(io::ErrorKind::InvalidData, "invalid PCM frame length"));
+                }
+                let mut pcm = vec![0u8; len];
+                stream.read_exact(&mut pcm).await?;
+                AudioCommand::Data(pcm)
+            }
+            other => return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("unknown conversation audio command {other:#04x}"),
+            )),
+        };
+        if tx.send(message).await.is_err() { break; }
     }
+
     drop(tx);
     worker.await.map_err(io::Error::other)??;
     Ok(())
 }
 
-/// Remove the endpoint during orderly shutdown.
 pub fn cleanup(path: &Path) {
     let _ = std::fs::remove_file(path);
 }

@@ -1,0 +1,16 @@
+[package]
+name = "duck-assistant"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.89"
+license = "Apache-2.0"
+description = "Realtime conversational voice bridge for Microduck"
+
+[dependencies]
+anyhow = "1"
+base64 = "0.22"
+futures-util = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time"] }
+tokio-tungstenite = { version = "0.28", features = ["native-tls"] }

@@ -1,16 +1,18 @@
 //! Microduck <-> OpenAI realtime conversation bridge.
-//!
-//! This first slice proves the cloud/session half of the path. Hardware capture/playback
-//! is deliberately kept behind the next audio bridge step so robotd remains the sole owner
-//! of the codec.
+
+mod audio;
 
 use anyhow::{Context, Result, bail};
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 use tokio_tungstenite::{connect_async, tungstenite::{client::IntoClientRequest, Message}};
 
+use audio::RobotAudio;
+
 const DEFAULT_MODEL: &str = "gpt-realtime-2.1";
 const REALTIME_URL: &str = "wss://api.openai.com/v1/realtime";
+const DEFAULT_ROBOT_AUDIO_SOCKET: &str = "/run/robotd-conversation.sock";
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -18,21 +20,22 @@ async fn main() -> Result<()> {
         .context("OPENAI_API_KEY is niet ingesteld")?;
     let model = std::env::var("DUCK_OPENAI_MODEL")
         .unwrap_or_else(|_| DEFAULT_MODEL.to_owned());
+    let audio_socket = std::env::var("DUCK_ROBOT_AUDIO_SOCKET")
+        .unwrap_or_else(|_| DEFAULT_ROBOT_AUDIO_SOCKET.to_owned());
+
+    let mut robot_audio = RobotAudio::connect(&audio_socket)
+        .await
+        .with_context(|| format!("kan robot-audio socket {audio_socket} niet openen"))?;
 
     let url = format!("{REALTIME_URL}?model={model}");
     let mut request = url.into_client_request()?;
-    request.headers_mut().insert(
-        "Authorization",
-        format!("Bearer {api_key}").parse()?,
-    );
+    request.headers_mut().insert("Authorization", format!("Bearer {api_key}").parse()?);
 
     let (socket, _) = connect_async(request)
         .await
         .context("kan geen realtime verbinding met OpenAI maken")?;
     let (mut tx, mut rx) = socket.split();
 
-    // Dutch by default, but the duck may naturally follow the user into another language.
-    // We ask for PCM16 so the next bridge can resample deterministically to robotd's 48 kHz.
     tx.send(Message::Text(json!({
         "type": "session.update",
         "session": {
@@ -47,10 +50,13 @@ async fn main() -> Result<()> {
             "audio": {
                 "input": {
                     "format": { "type": "audio/pcm", "rate": 24000 },
+                    "noise_reduction": { "type": "far_field" },
                     "turn_detection": {
                         "type": "server_vad",
                         "create_response": true,
-                        "interrupt_response": true
+                        "interrupt_response": true,
+                        "prefix_padding_ms": 300,
+                        "silence_duration_ms": 450
                     }
                 },
                 "output": {
@@ -61,7 +67,7 @@ async fn main() -> Result<()> {
         }
     }).to_string().into())).await?;
 
-    println!("duck-assistant: realtime sessie verbonden ({model}); Nederlands is standaard");
+    println!("duck-assistant: realtime verbonden ({model}); Nederlands is standaard");
 
     while let Some(message) = rx.next().await {
         let message = message?;
@@ -70,17 +76,24 @@ async fn main() -> Result<()> {
         match event.get("type").and_then(Value::as_str) {
             Some("session.updated") => println!("duck-assistant: sessie gereed"),
             Some("input_audio_buffer.speech_started") => {
-                println!("duck-assistant: gebruiker praat — playback moet nu stoppen");
+                // Barge-in: the user gets the floor immediately.
+                robot_audio.stop().await?;
             }
             Some("response.output_audio.delta") => {
-                // Next milestone: decode `delta`, resample 24 -> 48 kHz, and stream it to
-                // robotd::conversation_audio. Keeping this TODO explicit prevents accidental
-                // direct access to the exclusive ALSA device from this process.
+                let delta = event.get("delta").and_then(Value::as_str)
+                    .context("audio delta zonder delta-data")?;
+                let pcm24 = STANDARD.decode(delta)
+                    .context("ongeldige base64 audio van OpenAI")?;
+                robot_audio.write_24k(&pcm24).await?;
+            }
+            Some("response.output_audio.done") | Some("response.done") => {
+                robot_audio.finish().await?;
             }
             Some("error") => bail!("OpenAI realtime fout: {event}"),
             _ => {}
         }
     }
 
+    let _ = robot_audio.stop().await;
     Ok(())
 }

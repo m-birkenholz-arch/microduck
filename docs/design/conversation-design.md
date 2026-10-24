@@ -1,6 +1,6 @@
 # Microduck conversation design
 
-Status: initial implementation plan for `feature/conversation`.
+Status: microphone upload and Realtime playback connected on `feature/conversation`; live hardware validation remains.
 
 ## Goal
 
@@ -84,6 +84,28 @@ This avoids resampling inside the real-time robot path for M1.
 - No API key or model credential is stored in the repository or voice bank.
 - Conversation playback must release the PCM on disconnect/failure.
 
-## Next code change
+## Implemented conversation stream
 
-Implement the M1 playback primitive inside `robotd/src/sound.rs`, reusing the existing raw-PCM `aplay` setup and single-client ownership rules. Then expose it through a bounded streaming interface suitable for `duck-assistant`; do not place unbounded audio payloads in the JSON-RPC request structure.
+`duck-assistant` connects its `mic::Microphone` to the writer of the existing
+OpenAI Realtime WebSocket after sending the session configuration. `arecord`
+captures 48 kHz mono S16_LE from `DUCK_MIC_DEVICE` (default `plughw:aic3104,0`).
+The capture task assembles complete 40 ms frames, including across partial pipe
+reads, then averages adjacent samples to produce 24 kHz PCM16LE. A bounded channel
+holds at most eight captured frames; the upload task sends base64
+`input_audio_buffer.append` events. It runs independently of playback writes.
+
+The existing Dutch instructions, server VAD and automatic interruption/response
+creation stay on the same session. No client-side commit or response request is
+needed. Realtime audio deltas still pass through `RobotAudio` for 24 -> 48 kHz
+conversion and robotd playback. `input_audio_buffer.speech_started` stops robot
+playback for barge-in.
+
+Microphone EOF/read errors and upload failures end the session. Disconnect, error,
+or Ctrl-C cancels capture and upload and requests robot playback stop. Dropping
+`Microphone` aborts its capture task and kills its `arecord` process.
+
+This capture prototype requires access to the ALSA capture device. Other mic
+consumers must release it or share capture through ALSA configuration; microphone
+multiplexing and acoustic echo cancellation are not implemented here. Hardware
+acceptance tests for simultaneous listening, playback, and interruption remain.
+The per-robot speech voice transform and embodiment milestones remain future work.

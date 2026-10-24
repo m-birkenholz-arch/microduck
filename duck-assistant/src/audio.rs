@@ -19,7 +19,7 @@ pub const ROBOT_RATE: u32 = 48_000;
 /// samples. This is intentionally simple; later voice-character DSP can replace
 /// it without changing the robotd transport.
 pub fn pcm24_to_pcm48(input: &[u8]) -> Result<Vec<u8>> {
-    if input.len() % 2 != 0 {
+    if !input.len().is_multiple_of(2) {
         bail!("OpenAI PCM bevat een onvolledige 16-bit sample");
     }
     let samples: Vec<i16> = input
@@ -55,7 +55,10 @@ pub struct RobotAudio {
 
 impl RobotAudio {
     pub async fn connect(path: &str) -> Result<Self> {
-        Ok(Self { stream: UnixStream::connect(path).await?, opened: false })
+        Ok(Self {
+            stream: UnixStream::connect(path).await?,
+            opened: false,
+        })
     }
 
     pub async fn open(&mut self) -> Result<()> {
@@ -70,7 +73,9 @@ impl RobotAudio {
         self.open().await?;
         let pcm48 = pcm24_to_pcm48(pcm)?;
         self.stream.write_all(&[2]).await?;
-        self.stream.write_all(&(pcm48.len() as u32).to_le_bytes()).await?;
+        self.stream
+            .write_all(&(pcm48.len() as u32).to_le_bytes())
+            .await?;
         self.stream.write_all(&pcm48).await?;
         Ok(())
     }

@@ -10,6 +10,7 @@ import { createConversationServer, profile } from './server.mjs';
 import { DuckConversation } from './client.mjs';
 import { install } from './install.mjs';
 import { ConversationMotion, headExpression } from './motion.mjs';
+import { answerGesture, AnswerGestureCue } from './gestures.mjs';
 
 const originalHead = 'for (let h = 0; h < 4; h++) headSmooth[h] += HEAD_ALPHA * (headTarget[h] - headSmooth[h]);';
 const originalGame = `function buildObs() { ${originalHead} }\nfunction jawOpenNow() { return Math.min(1, pickJawNow() + Math.max(flap, padJaw)); }\nfunction activeSession() { if (recovery?.state === "recovering") return sessions.stand; return sessions[loco === "rollers" && mode === "walk" ? "drive" : mode]; }`;
@@ -320,6 +321,137 @@ test('installer refuses unknown standing policy selection before editing', async
   await assert.rejects(install(root), /Policyselectie wijkt af/);
   assert.equal(await readFile(path.join(root, 'app/index.html'), 'utf8'), index);
   assert.equal(await readFile(path.join(root, 'app/src/game/game.js'), 'utf8'), game);
+});
+
+test('Dutch yes/no cues distinguish clear confirmations, negation, quotations and uncertainty', () => {
+  for (const text of ['Ja, dat klopt.', 'Jazeker!', 'Inderdaad.', 'Dat klopt.', 'Je hebt gelijk.', 'Geen probleem.', 'Zeker weten.']) {
+    assert.equal(answerGesture(text, true), 'yes', text);
+  }
+  for (const text of ['Nee, dat klopt niet.', 'Zeker niet.', 'Absoluut niet.', 'Dat klopt niet.', 'Dat is niet waar.', 'Ik ben het niet met je eens.']) {
+    assert.equal(answerGesture(text, true), 'no', text);
+  }
+  for (const text of ['Misschien wel.', 'Dat weet ik niet zeker.', 'Obama was president.', 'Hij zei ja.', '"Ja", zei hij.', 'Ja?', 'Klopt het?', 'Ja noch nee.', 'Dat klopt mogelijk niet.']) {
+    assert.equal(answerGesture(text, true), null, text);
+  }
+  assert.equal(answerGesture('Dat klopt '), null);
+  assert.equal(answerGesture('Dat klopt niet.'), 'no');
+  assert.equal(answerGesture('Ne'), null);
+  assert.equal(answerGesture('Nee,'), 'no');
+});
+
+test('transcript cues wait for audible output and emit only once per response', () => {
+  const emitted = [];
+  const cue = new AnswerGestureCue(kind => emitted.push(kind));
+  cue.handleEvent({ type: 'response.created', response: { id: 'r1' } });
+  cue.handleEvent({ type: 'response.output_audio_transcript.delta', response_id: 'r1', delta: 'Ja,' });
+  cue.setLevel(0.8);
+  assert.deepEqual(emitted, []); // The model can generate text before playback starts.
+  cue.handleEvent({ type: 'response.done', response: { id: 'r1', status: 'completed' } });
+  cue.handleEvent({ type: 'output_audio_buffer.started', response_id: 'r1' });
+  cue.setLevel(0);
+  assert.deepEqual(emitted, []);
+  cue.setLevel(0.1);
+  assert.deepEqual(emitted, ['yes']);
+  cue.handleEvent({ type: 'response.output_audio_transcript.done', response_id: 'r1', transcript: 'Ja, dat klopt.' });
+  cue.setLevel(0.8);
+  assert.deepEqual(emitted, ['yes']);
+});
+
+test('split transcript negation does not cause an early affirmative nod', () => {
+  const emitted = [];
+  const cue = new AnswerGestureCue(kind => emitted.push(kind));
+  cue.handleEvent({ type: 'output_audio_buffer.started', response_id: 'r1' });
+  cue.setLevel(0.5);
+  cue.handleEvent({ type: 'response.output_audio_transcript.delta', response_id: 'r1', delta: 'Dat klopt ' });
+  assert.deepEqual(emitted, []);
+  cue.handleEvent({ type: 'response.output_audio_transcript.delta', response_id: 'r1', delta: 'niet.' });
+  assert.deepEqual(emitted, ['no']);
+});
+
+test('barge-in and a drained buffer discard late transcript and pending gesture cues', () => {
+  const emitted = [];
+  const cue = new AnswerGestureCue(kind => emitted.push(kind));
+  cue.handleEvent({ type: 'response.created', response: { id: 'old' } });
+  cue.handleEvent({ type: 'response.output_audio_transcript.delta', response_id: 'old', delta: 'Ja,' });
+  cue.handleEvent({ type: 'input_audio_buffer.speech_started' });
+  cue.handleEvent({ type: 'response.output_audio_transcript.done', response_id: 'old', transcript: 'Ja, dat klopt.' });
+  cue.handleEvent({ type: 'output_audio_buffer.started', response_id: 'old' });
+  cue.setLevel(1);
+  assert.deepEqual(emitted, []);
+  cue.handleEvent({ type: 'output_audio_buffer.started', response_id: 'new' });
+  cue.setLevel(0.5);
+  cue.handleEvent({ type: 'response.output_audio_transcript.delta', response_id: 'new', delta: 'Nee,' });
+  assert.deepEqual(emitted, ['no']);
+  cue.handleEvent({ type: 'output_audio_buffer.stopped', response_id: 'new' });
+  cue.handleEvent({ type: 'response.output_audio_transcript.done', response_id: 'new', transcript: 'Nee, dat klopt niet.' });
+  cue.setLevel(1);
+  assert.deepEqual(emitted, ['no']);
+});
+
+test('client connects audio transcript cues to gesture callbacks and cancels on interruption', async () => {
+  const gestures = [];
+  const f = browserFixture({ onGesture: kind => gestures.push(kind) });
+  await f.duck.start();
+  f.duck.handleEvent({ type: 'response.created', response: { id: 'r1' } });
+  f.duck.handleEvent({ type: 'response.output_audio_transcript.delta', response_id: 'r1', delta: 'Ja,' });
+  f.duck.handleEvent({ type: 'output_audio_buffer.started', response_id: 'r1' });
+  f.duck.gestureCue.setLevel(0.4);
+  assert.deepEqual(gestures, ['yes']);
+  f.duck.handleEvent({ type: 'input_audio_buffer.speech_started' });
+  f.duck.handleEvent({ type: 'response.output_audio_transcript.done', response_id: 'r1', transcript: 'Ja, dat klopt.' });
+  f.duck.gestureCue.setLevel(1);
+  assert.deepEqual(gestures, ['yes']);
+  f.duck.stop();
+  assert.equal(f.duck.gestureCue.responses.size, 0);
+});
+
+test('yes nods in pitch, no shakes in yaw, both are bounded and preserve body motion', () => {
+  for (const kind of ['yes', 'no']) {
+    const motion = new ConversationMotion();
+    const baseline = new ConversationMotion();
+    for (const m of [motion, baseline]) { m.setPhase('speaking'); m.setLevel(0.7); }
+    motion.triggerGesture(kind);
+    let peak = 0;
+    let previous = [0, 0, 0, 0];
+    for (let step = 0; step < 80; step++) {
+      const head = [...motion.step(0.02, true)];
+      baseline.step(0.02, true);
+      assert.deepEqual(motion.body, baseline.body);
+      for (let h = 0; h < 4; h++) {
+        assert.ok(Math.abs(head[h]) <= (h === 0 ? 0.12 : 0.30));
+        assert.ok(Math.abs(head[h] - previous[h]) < 0.06);
+      }
+      const axis = kind === 'yes' ? 1 : 2;
+      peak = Math.max(peak, Math.abs(head[axis]));
+      assert.equal(head[kind === 'yes' ? 2 : 1], 0);
+      assert.equal(head[3], 0);
+      previous = head;
+    }
+    assert.ok(peak > 0.10);
+    for (let step = 0; step < 20; step++) motion.step(0.02, true);
+    assert.equal(motion.gesture, null);
+  }
+});
+
+test('gestures stop on interruption, manual override, disabled head motion and Stop', () => {
+  const motion = new ConversationMotion();
+  motion.triggerGesture('yes');
+  assert.equal(motion.gesture, null);
+  motion.setPhase('speaking');
+  motion.triggerGesture('yes');
+  motion.step(0.02, true);
+  motion.setPhase('listening');
+  assert.equal(motion.gesture, null);
+  motion.setPhase('speaking'); motion.triggerGesture('no');
+  motion.step(0.02, false);
+  assert.equal(motion.gesture, null);
+  motion.step(0.02, true);
+  assert.equal(motion.gesture, null); // No replay after releasing manual control.
+  motion.triggerGesture('yes'); motion.enabled = false;
+  motion.step(0.02, true);
+  assert.equal(motion.gesture, null);
+  motion.enabled = true; motion.triggerGesture('no'); motion.setPhase('off');
+  assert.equal(motion.gesture, null);
 });
 
 test('installer refuses an unknown simulator version before editing files', async t => {

@@ -20,6 +20,8 @@ export class ConversationMotion {
     this.time = 0;
     this.head = [0, 0, 0, 0];
     this.body = [0, 0, 0]; // z (metres), roll and pitch (radians)
+    this.gesture = null;
+    this.gestureTime = 0;
   }
 
   setPhase(phase) {
@@ -27,6 +29,7 @@ export class ConversationMotion {
     if (phase !== this.phase) this.time = 0;
     this.phase = phase;
     if (phase !== 'speaking') this.level = 0;
+    if (phase !== 'speaking') this.gesture = null;
   }
 
   setLevel(level) {
@@ -35,6 +38,12 @@ export class ConversationMotion {
 
   setStrength(value) {
     this.strength = Number.isFinite(value) ? Math.max(1, Math.min(4, value)) : 3;
+  }
+
+  triggerGesture(kind) {
+    if (!this.enabled || this.phase !== 'speaking' || !['yes', 'no'].includes(kind)) return;
+    this.gesture = kind;
+    this.gestureTime = 0;
   }
 
   wantsStand(allowed) {
@@ -47,7 +56,8 @@ export class ConversationMotion {
   step(dt, allowed) {
     // The caller owns arbitration. Reset rather than queue gestures while a
     // person, a trick, a recovery or a community policy has the duck.
-    if (!allowed) { this.head.fill(0); this.body.fill(0); this.time = 0; return this.head; }
+    if (!allowed) { this.head.fill(0); this.body.fill(0); this.time = 0; this.gesture = null; return this.head; }
+    if (!this.enabled) this.gesture = null;
     const seconds = Number.isFinite(dt) ? Math.max(0, Math.min(0.05, dt)) : 0;
     this.time += seconds;
     let target = [0, 0, 0, 0];
@@ -74,11 +84,23 @@ export class ConversationMotion {
         0.007 * Math.sin(2 * Math.PI * this.time / 7),
         this.phase === 'thinking' ? 0.006 : -0.009];
     }
+    if (this.gesture) {
+      this.gestureTime += seconds;
+      const progress = this.gestureTime / 1.7;
+      if (progress >= 1) this.gesture = null;
+      else {
+        const wave = Math.sin(4 * Math.PI * progress) * Math.sin(Math.PI * progress) ** 2;
+        // A deliberate nod/shake owns the head for two smooth cycles. Suppress
+        // the generic sideways sway so a yes cannot look like a mixed signal.
+        target = this.gesture === 'yes' ? [-0.02 * wave, 0.10 * wave, 0, 0] : [0, 0, 0.10 * wave, 0];
+      }
+    }
     const alpha = 1 - Math.exp(-seconds / 0.35);
+    const headAlpha = this.gesture ? 1 - Math.exp(-seconds / 0.12) : alpha;
     for (let i = 0; i < 4; i++) {
       const limit = i === 0 ? 0.12 : 0.30;
       const scaled = Math.max(-limit, Math.min(limit, target[i] * this.strength));
-      this.head[i] = this.enabled ? this.head[i] + alpha * (scaled - this.head[i]) : 0;
+      this.head[i] = this.enabled ? this.head[i] + headAlpha * (scaled - this.head[i]) : 0;
       if (Math.abs(this.head[i]) < 1e-6) this.head[i] = 0;
     }
     for (let i = 0; i < 3; i++) {

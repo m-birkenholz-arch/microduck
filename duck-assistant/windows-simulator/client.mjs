@@ -1,6 +1,8 @@
 // Browser audio uses WebRTC; the helper only exchanges SDP with OpenAI.
+import { AnswerGestureCue } from './gestures.mjs';
+
 export class DuckConversation {
-  constructor({ onStatus = () => {}, onText = () => {}, onLevel = () => {}, onPhase = () => {},
+  constructor({ onStatus = () => {}, onText = () => {}, onLevel = () => {}, onPhase = () => {}, onGesture = () => {},
     mediaDevices = globalThis.navigator?.mediaDevices,
     makePeer = () => new RTCPeerConnection(),
     makeAudio = () => new Audio(),
@@ -11,6 +13,7 @@ export class DuckConversation {
   } = {}) {
     Object.assign(this, { onStatus, onText, onLevel, onPhase, mediaDevices, makePeer, makeAudio, makeContext, fetchImpl });
     this.generation = 0;
+    this.gestureCue = new AnswerGestureCue(onGesture);
   }
 
   async start() {
@@ -59,7 +62,9 @@ export class DuckConversation {
           this.meter = setInterval(() => {
             analyser.getFloatTimeDomainData(samples);
             const rms = Math.sqrt(samples.reduce((sum, x) => sum + x * x, 0) / samples.length);
-            this.onLevel(audio.muted ? 0 : Math.min(1, rms * 7));
+            const level = audio.muted ? 0 : Math.min(1, rms * 7);
+            this.onLevel(level);
+            this.gestureCue.setLevel(level);
           }, 40);
         } catch {
           if (current()) this.fail('Geluidsweergave is geblokkeerd. Stop en start het gesprek opnieuw.');
@@ -133,12 +138,14 @@ export class DuckConversation {
     } else if (event.type === 'error') {
       this.fail(event.error?.message || 'OpenAI meldt een fout.');
     }
+    this.gestureCue.handleEvent(event);
   }
 
   fail(message) { this.stop(); this.onStatus(message, false); }
 
   stop() {
     this.generation++;
+    this.gestureCue.reset();
     this.controller?.abort();
     clearInterval(this.meter);
     clearTimeout(this.connectionTimer);

@@ -45,6 +45,7 @@ const conversation = new DuckConversation({
     conversationMotion.setLevel(level);
   },
   onPhase(phase) { conversationMotion.setPhase(phase); },
+  onGesture(kind) { conversationMotion.triggerGesture(kind); },
 });
 root.querySelector('#motion').addEventListener('change', event => {
   conversationMotion.enabled = event.target.checked;

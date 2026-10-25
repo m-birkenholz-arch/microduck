@@ -58,6 +58,19 @@ uitgeschakeld; er worden geen bewegingen opgespaard. De Rust-robotcode wordt
 hiermee niet aangepast. Stabiliteit en zichtbaarheid moeten in de simulator
 worden gecontroleerd.
 
+Bij duidelijke bevestigingen zoals “ja”, “inderdaad” en “dat klopt” knikt de kop.
+Bij ontkenningen zoals “nee”, “zeker niet” en “dat klopt niet” schudt de kop.
+De herkenning gebruikt de openingszin van de gesproken antwoordtekst. Citaten,
+vragen en onzekere of onherkende formuleringen krijgen geen ja/nee-gebaar.
+Het gebaar begint zodra de tekst bekend is en de antwoordaudio hoorbaar wordt;
+dit is bij benadering, niet exact per woord gesynchroniseerd. Er is maximaal één
+ja/nee-gebaar per antwoord. Onderbreken, Stop en handmatige bediening wissen het
+gebaar. Het vinkje voor hoofd-/nekbeweging schakelt ook deze gebaren uit.
+
+Probeer bijvoorbeeld “Is twee plus twee vier?” en daarna “Is twee plus twee vijf?”.
+De duck hoort bij het bevestigende antwoord te knikken en bij het ontkennende
+antwoord te schudden. De lichaamsbeweging en spraak blijven daarbij doorlopen.
+
 De microfoon blijft open zolang het gesprek actief is. Een nieuw gestart gesprek
 begint met een lege sessie. Deze versie heeft geen weer-, zoek- of andere tools.
 

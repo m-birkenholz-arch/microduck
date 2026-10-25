@@ -189,3 +189,28 @@ phrase retains a 0.60 amplitude floor so low laptop RMS does not make the sway
 invisible. Scaled offsets are capped at 0.12 rad for the neck and 0.30 rad for
 other head axes before the existing smoothing; these are simulator command
 bounds, not measured guarantees about rendered angles or hardware validation.
+
+### Affirmative nods and negative shakes
+
+`gestures.mjs` conservatively classifies the opening clause of the model's
+generated audio transcript. Streamed deltas are buffered until a clause boundary
+or transcript completion: a partial "Dat klopt" must not nod before "niet"
+arrives. Clear Dutch yes/no phrases trigger a nod or shake; quoted speech,
+questions, uncertain wording and unrecognised clauses abstain. This is a local
+phrase matcher, not a general semantic classifier or an additional LLM call.
+
+Each response ID owns its pending cue. The cue waits for the matching
+`output_audio_buffer.started` and nonzero played audio, then emits at most once.
+Completed generation does not end a buffered audio response. Interrupted,
+cancelled or drained responses are tombstoned so late transcript.done events
+cannot revive an old gesture. Stop clears all cue state. Transcript timing has
+no per-word playback alignment here: the gesture is approximately aligned with
+the audible answer, not guaranteed to coincide with an individual word.
+
+The gesture briefly replaces the generic head sway with two enveloped pitch
+cycles for yes or yaw cycles for no. Existing bounds and policy head command
+paths still apply, with faster head smoothing for a visible deliberate gesture.
+Body sway is unchanged. Listening, Stop, disabled head motion and manual takeover
+cancel a gesture; it is never replayed after an override. Tests cover split
+negation, ambiguity, response/audio ordering, duplicate and late events, motion
+axis/duration/bounds, independent body motion and cancellation.

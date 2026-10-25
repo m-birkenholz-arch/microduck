@@ -224,3 +224,33 @@ test('a video track ended by Windows closes the camera with a reason and removes
   assert.equal(f.timers.size, 0); assert.equal(listeners.size, 0);
   assert.match(f.states.at(-1), /browser of Windows gestopt/);
 });
+
+test('default browser timers retain their Window receiver so enrollment reaches three frames', async t => {
+  // Node timers tolerate a class-instance receiver; Window timers do not.
+  // The previous this.schedule(...) threw Illegal invocation after frame one.
+  const timers = new Map(); let timer = 0;
+  t.mock.method(globalThis, 'setTimeout', function(callback) {
+    if (this !== globalThis) throw new TypeError('Illegal invocation');
+    timers.set(++timer, callback); return timer;
+  });
+  t.mock.method(globalThis, 'clearTimeout', function(id) {
+    if (this !== globalThis) throw new TypeError('Illegal invocation');
+    timers.delete(id);
+  });
+  const track = { stop() {} }, video = { play: async () => {}, pause() {} };
+  const camera = new LocalFaceCamera({ video, gallery: new FaceGallery(storageFixture(), () => 'id'),
+    mediaDevices: { getUserMedia: async () => ({ getTracks: () => [track] }) },
+    makeEngine: async () => ({ detect: async () => [face()] }),
+  });
+  t.after(() => camera.stop());
+  await camera.start();
+  assert.equal(camera.recognitionError, ''); assert.equal(camera.recent.length, 1); assert.equal(timers.size, 1);
+  for (let n = 0; n < 2; n++) {
+    const [id, callback] = timers.entries().next().value;
+    timers.delete(id); callback();
+    await Promise.resolve();
+  }
+  assert.equal(camera.recent.length, 3); assert.equal(camera.recognitionError, '');
+  assert.equal(camera.learn('Michael').name, 'Michael');
+  camera.stop(); assert.equal(timers.size, 0);
+});

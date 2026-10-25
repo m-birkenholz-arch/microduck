@@ -80,7 +80,8 @@ export function loadFaceEngine() {
 
 export class LocalFaceCamera {
   constructor({ video, gallery, mediaDevices = globalThis.navigator?.mediaDevices, makeEngine = loadFaceEngine,
-    onState = () => {}, onResult = () => {}, schedule = setTimeout, unschedule = clearTimeout, now = Date.now }) {
+    onState = () => {}, onResult = () => {}, schedule = (callback, delay) => globalThis.setTimeout(callback, delay),
+    unschedule = timer => globalThis.clearTimeout(timer), now = Date.now }) {
     Object.assign(this, { video, gallery, mediaDevices, makeEngine, onState, onResult, schedule, unschedule, now });
     this.active = false; this.generation = 0; this.shareName = false; this.recognitionError = ''; this.trackCleanup = []; this.reset();
   }

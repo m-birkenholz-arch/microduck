@@ -13,7 +13,8 @@ export class WakeWord {
     const Recognition = globalThis.SpeechRecognition || globalThis.webkitSpeechRecognition;
     if (!Recognition) throw new Error('Dit wekwoord werkt hier niet. Gebruik Chrome of Edge, of Start gesprek.');
     return new Recognition();
-  }, getName = () => 'Duck', onWake = () => {}, onState = () => {}, schedule = setTimeout, unschedule = clearTimeout } = {}) {
+  }, getName = () => 'Duck', onWake = () => {}, onState = () => {}, schedule = (callback, delay) => globalThis.setTimeout(callback, delay),
+    unschedule = timer => globalThis.clearTimeout(timer) } = {}) {
     Object.assign(this, { makeRecognition, getName, onWake, onState, schedule, unschedule });
     this.enabled = false; this.paused = true; this.generation = 0;
   }

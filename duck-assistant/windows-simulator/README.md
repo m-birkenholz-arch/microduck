@@ -227,6 +227,13 @@ begint nooit vanzelf opnieuw en het naamdelen staat na stoppen weer uit. De
 camerafunctie werkt los van de Google-key; de begroeting/gesprekken vereisen wel
 de gewone gesprekshulp met OpenAI-key.
 
+De melding **Illegal invocation** uit de eerste cameraversie kwam door een
+browser-timer die als methode van de cameraklasse werd aangeroepen. De
+herkenning liep daardoor na de eerste meting vast en Aanleren bleef uit. De
+native browser-timers worden nu via hun eigen Window-object aangeroepen; ook de
+herstarttimer van het wekwoord gebruikt die correctie. De gezichtsprofielen en
+camera-/naamtoestemming veranderen hierdoor niet.
+
 Sluit de camera kort na starten? De camerabeelden blijven nu aan als alleen de
 herkenning faalt. De herkenner wacht op een bruikbaar videoframe en gebruikt een
 lokale canvas-kopie van het beeld. Bij een GPU-fout probeert hij één keer de CPU

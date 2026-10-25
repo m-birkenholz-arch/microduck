@@ -272,6 +272,14 @@ results or a >5 second stale observation withhold the name immediately. These
 are conservative heuristic thresholds, not calibrated identity probabilities.
 There is no liveness proof: photos and false matches are possible.
 
+The default schedule/cancel callbacks wrap `globalThis.setTimeout/clearTimeout`
+rather than storing bare Window methods on a class instance. The previous
+`this.schedule(...)` invocation used an invalid native receiver, raising
+`Illegal invocation` after the first face result and preventing three-frame
+enrollment. Browser-style receiver checks now cover the full timer-driven
+three-frame enrollment and stop path; the wake restart timer has the same fix.
+Node's permissive timer receivers had hidden this issue from earlier tests.
+
 The local `get_camera_status` Realtime function is read-only and never starts a
 camera. It returns active state and a recent face count, plus a possible name only
 when the user opts in to name sharing in the camera panel. It never exposes images,

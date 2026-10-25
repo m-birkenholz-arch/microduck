@@ -192,3 +192,18 @@ test('mother profile keeps homework mode and includes level-aware hints, example
   assert.match(prompt, /uitgewerkt voorbeeld/); assert.match(prompt, /Controleer berekeningen/);
   assert.match(prompt, /onleesbaar/); assert.match(prompt, /Ik houd van vogels/);
 });
+
+test('wake restart and cancellation preserve the Window timer receiver too', t => {
+  const timers = new Map(); let id = 0, recognition;
+  t.mock.method(globalThis, 'setTimeout', function(callback) {
+    if (this !== globalThis) throw new TypeError('Illegal invocation');
+    timers.set(++id, callback); return id;
+  });
+  t.mock.method(globalThis, 'clearTimeout', function(timer) {
+    if (this !== globalThis) throw new TypeError('Illegal invocation');
+    timers.delete(timer);
+  });
+  const wake = new WakeWord({ makeRecognition: () => (recognition = { start() {}, abort() {} }) });
+  wake.enable(); recognition.onend(); assert.equal(timers.size, 1);
+  wake.disable(); assert.equal(timers.size, 0);
+});

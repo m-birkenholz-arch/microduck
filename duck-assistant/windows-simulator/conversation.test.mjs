@@ -660,3 +660,33 @@ test('registered audio processor processes missing input safely and accepts rese
   processor.process([], [[output]]);
   assert.ok(output.every(x => x === 0));
 });
+
+test('browser completes a Google lookup on the data channel and displays the returned evidence', async t => {
+  const results = [], ready = [];
+  const f = browserFixture({
+    onSearchReady: value => ready.push(value), onSearchResult: value => results.push(value),
+    fetchImpl: async (url, init) => {
+      if (url.endsWith('/health')) return Response.json({ ready: true, googleSearch: true });
+      if (url.endsWith('/search')) {
+        assert.deepEqual(JSON.parse(init.body), { query: 'Wie was Obama?' });
+        assert.ok(init.signal);
+        return Response.json({ provider: 'Google Search', text: '44e president', sources: [{ title: 'Library', url: 'https://www.obamalibrary.gov/' }] });
+      }
+      return new Response('v=0\r\nanswer');
+    },
+  });
+  t.after(() => f.duck.stop());
+  await f.duck.start();
+  f.channel.onopen();
+  f.channel.onmessage({ data: JSON.stringify({ type: 'response.done', response: {
+    id: 'search1', status: 'completed', output: [{ type: 'function_call', name: 'search_web', call_id: 'google1', arguments: '{"query":"Wie was Obama?"}' }],
+  } }) });
+  await new Promise(resolve => setTimeout(resolve, 10));
+  assert.deepEqual(ready, [true]);
+  assert.equal(results.at(-1).text, '44e president');
+  const output = f.channel.messages.find(x => x.type === 'conversation.item.create');
+  assert.equal(output.item.call_id, 'google1');
+  assert.equal(JSON.parse(output.item.output).ok, true);
+  assert.equal(f.channel.messages.at(-1).type, 'response.create');
+  assert.ok(f.states.some(x => x.text.includes('Google')));
+});

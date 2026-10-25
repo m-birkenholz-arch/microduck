@@ -51,7 +51,7 @@ export async function install(simulatorPath) {
   if (game.includes('function conversationMotionAllowed()') && !game.includes(allowedHelper)) throw new Error('Gespreksbesturing wijkt af; installatie afgebroken zonder wijzigingen.');
   const destination = path.join(app, 'src', 'duck-conversation');
   await mkdir(destination, { recursive: true });
-  for (const name of ['panel.mjs', 'client.mjs', 'mouth.mjs', 'motion.mjs', 'gestures.mjs', 'voice.mjs', 'voice-worklet.mjs']) {
+  for (const name of ['panel.mjs', 'client.mjs', 'mouth.mjs', 'motion.mjs', 'gestures.mjs', 'voice.mjs', 'voice-worklet.mjs', 'search-tools.mjs']) {
     await copyFile(path.join(source, name), path.join(destination, name));
   }
   for (const file of [indexPath, gamePath]) {

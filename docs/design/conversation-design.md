@@ -140,6 +140,50 @@ jaw opening. Stop, a closed session,
 page exit or a startup failure closes the peer connection and microphone tracks,
 including tracks granted after Stop was pressed during the permission dialog.
 
+### Google Search for browser conversations
+
+When a Google API key is present, the helper adds the `search_web` function and
+supplementary Dutch search instructions to the base session profile. The base
+Dutch conversation/voice profile still matches Rust. Google uses the Gemini REST
+`generateContent` endpoint with `google_search`, default `gemini-3.8-flash` (model
+configurable via `DUCK_GOOGLE_MODEL`). OpenAI remains the Realtime voice provider.
+Only the standalone search question, current UTC time and a fixed search prompt
+are sent to Google, not the full transcript or microphone stream. Keys stay in
+the loopback helper; `start.ps1 -GoogleSearch` prompts with hidden input and
+restores both previous process environment values on exit.
+
+The browser executes function calls only after a completed `response.done`, not
+on arguments-done events which can belong to cancelled responses. It sends each
+`function_call_output` followed by one `response.create` with `tool_choice: none`
+for the spoken answer. Duplicate calls are ignored. Barge-in cancels pending
+lookups, completes old calls as interrupted without generating another answer,
+and suppresses stale results; Stop aborts without sending into a closed channel.
+Search failures become explicit tool errors; absence of grounded sources is an
+error rather than a plausible but unverified search answer.
+
+`POST /search` retains the helper's exact Origin/Host checks, accepts only a
+bounded JSON query and uses a fixed Google endpoint with header authentication.
+It has a 30-second provider timeout, one active lookup and ten requests per minute;
+client disconnect aborts the provider request. Provider/network errors are
+sanitized, never forwarded verbatim. Source URLs are restricted to HTTP(S) with
+no embedded credentials. The latest Google answer and source links are rendered
+as text/DOM links; Search Suggestions use Google's supplied HTML in a sandboxed
+iframe with scripts disabled. The panel displays the lookup evidence, not
+claim-level citations for the Realtime model's later spoken paraphrase. Retrieved
+text is untrusted data and carries no authority to change instructions or operate
+the robot. The feature can only look up public information, not drive actuators.
+
+Without a Google key, the original speech session remains available without tools.
+`/health` exposes only search readiness/version and no keys. Existing helpers must
+be restarted to activate the new route and tool registration. The physical Rust
+assistant has not yet implemented the Google tool; this milestone is browser-only.
+Tests mock both providers. Live Google access, account quota, Windows prompts and
+spoken search behavior require a user-side test with valid credentials.
+
+Official interface references: [Google Search grounding](https://ai.google.dev/gemini-api/docs/generate-content/google-search),
+[Gemini API keys](https://ai.google.dev/gemini-api/docs/api-key), and
+[Realtime function calls](https://developers.openai.com/api/docs/guides/realtime-conversations#function-calling).
+
 ### Browser duck voice
 
 The received WebRTC stream is routed through a mono `AudioWorkletNode`, a mute

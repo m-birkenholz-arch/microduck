@@ -1,6 +1,7 @@
 param(
     [string]$SimulatorPath = (Join-Path $env:USERPROFILE 'microduck-simulator'),
-    [string]$Ref = 'feature/conversation'
+    [string]$Ref = 'feature/conversation',
+    [switch]$GoogleSearch
 )
 $ErrorActionPreference = 'Stop'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
@@ -20,11 +21,11 @@ if ($Ref -notmatch '^[a-f0-9]{40}$') { throw 'Kon de installatieversie niet bepa
 $tools = Join-Path $SimulatorPath 'duck-conversation-tools'
 New-Item -ItemType Directory -Force -Path $tools | Out-Null
 $base = "https://raw.githubusercontent.com/m-birkenholz-arch/microduck/$Ref/duck-assistant/windows-simulator"
-foreach ($name in @('server.mjs', 'session.json', 'client.mjs', 'panel.mjs', 'mouth.mjs', 'motion.mjs', 'gestures.mjs', 'voice.mjs', 'voice-worklet.mjs', 'install.mjs', 'start.ps1')) {
+foreach ($name in @('server.mjs', 'search-google.mjs', 'session.json', 'client.mjs', 'panel.mjs', 'mouth.mjs', 'motion.mjs', 'gestures.mjs', 'voice.mjs', 'voice-worklet.mjs', 'search-tools.mjs', 'install.mjs', 'start.ps1')) {
     Invoke-WebRequest -UseBasicParsing -Uri "$base/$name" -OutFile (Join-Path $tools $name)
 }
 & $node.Source (Join-Path $tools 'install.mjs') $SimulatorPath
 if ($LASTEXITCODE -ne 0) { throw 'Installatie afgebroken. Zie de fout hierboven.' }
 Write-Host "Geinstalleerd uit commit $Ref"
 Write-Host 'Ververs straks http://localhost:5173. Rechtsboven verschijnt Praat met Microduck.'
-& (Join-Path $tools 'start.ps1')
+& (Join-Path $tools 'start.ps1') -GoogleSearch:$GoogleSearch

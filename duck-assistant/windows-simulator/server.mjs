@@ -1,5 +1,7 @@
-// Local-only SDP exchange. The project key never enters the browser or Vite.
+// Loopback-only SDP exchange and Google lookup; keys never enter the browser or Vite.
 import http from 'node:http';
+import { googleSearch, DEFAULT_SEARCH_MODEL, GoogleSearchError } from './search-google.mjs';
+import { searchTool, searchInstructions } from './search-tools.mjs';
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
@@ -9,8 +11,12 @@ export function createConversationServer({
   apiKey = process.env.OPENAI_API_KEY?.trim(),
   model = process.env.DUCK_OPENAI_MODEL || profile.model,
   fetchImpl = fetch,
+  googleKey = process.env.GOOGLE_API_KEY?.trim() || process.env.GEMINI_API_KEY?.trim(),
+  googleModel = process.env.DUCK_GOOGLE_MODEL || DEFAULT_SEARCH_MODEL,
   origins = ['http://localhost:5173', 'http://127.0.0.1:5173'],
 } = {}) {
+  let activeSearch = false;
+  const searches = [];
   return http.createServer(async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -38,15 +44,46 @@ export function createConversationServer({
       return;
     }
     if (req.method === 'GET' && req.url === '/health') {
-      reply(200, JSON.stringify({ ready: Boolean(apiKey), model }), 'application/json');
+      reply(200, JSON.stringify({ ready: Boolean(apiKey), model, googleSearch: Boolean(googleKey), searchVersion: 1 }), 'application/json');
       return;
     }
-    if (req.method !== 'POST' || req.url !== '/session') {
+    if (req.method !== 'POST' || !['/session', '/search'].includes(req.url)) {
       reply(404, 'Onbekend adres.');
       return;
     }
     if (!apiKey) {
       reply(503, 'Start start.ps1 en vul daar je OpenAI API-key in.');
+      return;
+    }
+    if (req.url === '/search') {
+      if (!googleKey) { reply(503, 'Google zoeken is uitgeschakeld. Start start.ps1 met een Google API-key.'); return; }
+      if (req.headers['content-type']?.split(';')[0] !== 'application/json') { reply(415, 'JSON-zoekvraag verwacht.'); return; }
+      const controller = new AbortController();
+      res.on('close', () => controller.abort());
+      let acquired = false;
+      try {
+        const chunks = []; let bytes = 0;
+        for await (const chunk of req) {
+          bytes += chunk.length;
+          if (bytes > 8192) { reply(413, 'Zoekvraag te groot.'); return; }
+          chunks.push(chunk);
+        }
+        let args;
+        try { args = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { reply(400, 'Ongeldige JSON-zoekvraag.'); return; }
+        if (!args || typeof args.query !== 'string' || !args.query.trim() || args.query.length > 1000 || Object.keys(args).some(k => k !== 'query')) {
+          reply(400, 'Geef één concrete zoekvraag van maximaal 1000 tekens.'); return;
+        }
+        const now = Date.now();
+        while (searches.length && searches[0] < now - 60000) searches.shift();
+        if (activeSearch || searches.length >= 10) { reply(429, 'Even wachten: er loopt al een zoekopdracht of de zoeklimiet is bereikt.'); return; }
+        activeSearch = true; acquired = true; searches.push(now);
+        const result = await googleSearch(args.query.trim(), { apiKey: googleKey, model: googleModel, fetchImpl,
+          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(30000)]) });
+        if (!res.destroyed) reply(200, JSON.stringify(result), 'application/json');
+      } catch (error) {
+        if (!res.destroyed) reply(502, error.name === 'TimeoutError' ? 'Google zoeken duurde te lang. Probeer opnieuw.' :
+          error instanceof GoogleSearchError ? error.message : 'Google zoeken is niet bereikbaar of leverde ongeldige gegevens.');
+      } finally { if (acquired) activeSearch = false; }
       return;
     }
     if (req.headers['content-type']?.split(';')[0] !== 'application/sdp') {
@@ -71,7 +108,7 @@ export function createConversationServer({
       const form = new FormData();
       form.set('sdp', sdp);
       // WebRTC negotiates its audio format in SDP; the robot uses PCM over WS.
-      form.set('session', JSON.stringify({ ...profile, model }));
+      form.set('session', JSON.stringify({ ...profile, model, ...(googleKey ? { tools: [searchTool], tool_choice: 'auto', instructions: profile.instructions + searchInstructions } : {}) }));
       const upstream = await fetchImpl('https://api.openai.com/v1/realtime/calls', {
         method: 'POST',
         headers: { Authorization: `Bearer ${apiKey}` },

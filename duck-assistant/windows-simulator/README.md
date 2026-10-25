@@ -72,7 +72,7 @@ De duck hoort bij het bevestigende antwoord te knikken en bij het ontkennende
 antwoord te schudden. De lichaamsbeweging en spraak blijven daarbij doorlopen.
 
 De microfoon blijft open zolang het gesprek actief is. Een nieuw gestart gesprek
-begint met een lege sessie. Deze versie heeft geen weer-, zoek- of andere tools.
+begint met een lege sessie. Google Search is optioneel beschikbaar zoals hieronder beschreven.
 
 De basisstem is `shimmer`. In de browser maakt een lokale stemvervorming de
 toonhoogte en klank hoger zonder het spreektempo te verhogen. **Eendenstem**
@@ -84,6 +84,50 @@ laptop wat schattig én verstaanbaar klinkt. Er worden geen extra API-aanroepen 
 Na een update van `session.json` moet je de hulpserver opnieuw starten en een nieuw
 gesprek beginnen. De lokale stemvervorming geldt voor de browsersimulator; op de
 fysieke robot wordt deze nog niet toegepast.
+
+## Google Search inschakelen
+
+Voor kennisvragen (bijvoorbeeld Obama, hoe een motor werkt of het weer) kan de
+browsimulator via de lokale hulpserver Google Search raadplegen. OpenAI Realtime
+blijft het gesprek en de stem verzorgen. De zoekvraag gaat naar Google via Gemini,
+standaard `gemini-3.8-flash`; het resultaat met bronlinks gaat terug naar OpenAI.
+Alleen de zelfstandige zoekvraag wordt aan Google verzonden, niet de volledige
+microfoonaudio of de volledige gesprekshistorie. API-gebruik bij Google wordt
+apart van OpenAI afgerekend; controleer je Google-projectquota en facturering.
+
+1. Maak een Gemini API-key in [Google AI Studio](https://aistudio.google.com/apikey).
+2. Stop het gesprek en stop de **oude gesprekshulp** met Ctrl+C. Laat Vite draaien.
+3. Start de bijgewerkte helper met:
+
+   ```powershell
+   powershell -NoProfile -ExecutionPolicy Bypass -File "$env:USERPROFILE\microduck-simulator\duck-conversation-tools\start.ps1" -GoogleSearch
+   ```
+
+4. Vul de OpenAI-key en daarna de Google-key in de verborgen invoer in. Beide
+   blijven alleen in het helperproces; ze worden niet opgeslagen in bestanden,
+   browser of logs. Deel ze niet in de chat.
+5. Ververs de browser en start een nieuw gesprek. Het paneel meldt
+   **Google Search ingeschakeld**.
+
+Vraag bijvoorbeeld “Zoek op wie Barack Obama was” of “Hoe werkt fotosynthese?”.
+Bij weer zonder bekende plaats hoort de duck eerst naar de plaats te vragen.
+Tijdens de zoekopdracht staat er “Ik zoek het op met Google…”. Daarna gebruikt de
+duck de gevonden informatie en toont het paneel het opgezochte antwoord,
+bronlinks en de meegeleverde Google Search-suggesties. Deze bronnen horen bij het
+opgezochte materiaal; de gesproken samenvatting kan anders geformuleerd zijn.
+
+Bij onderbreken wordt de lopende zoekopdracht afgebroken; oude resultaten starten
+geen nieuw antwoord. Stop sluit ook het zoeken af. Een zoekfout wordt als fout
+teruggegeven aan het model, zodat het eerlijk kan zeggen dat opzoeken niet lukte.
+Zonder Google-key blijft gewoon praten werken, maar is Google zoeken uit.
+De hulpserver begrenst zoeken op één opdracht tegelijk en tien per minuut; een
+antwoord na een zoekresultaat kan niet meteen opnieuw zoeken. Er is geen
+achtergrondpolling. `DUCK_GOOGLE_MODEL` kan het zoekmodel overriden. De fysieke
+Rust-assistent heeft deze Google-koppeling nog niet.
+
+De installatie ondersteunt ook `install.ps1 -GoogleSearch`. Alleen als deze optie
+is opgegeven vraagt de launcher om een ontbrekende Google-key. Bestaande
+`GOOGLE_API_KEY` of `GEMINI_API_KEY` procesvariabelen worden gebruikt zonder prompt.
 
 ## Later opnieuw starten
 
@@ -105,7 +149,7 @@ API-tegoed en modeltoegang hebben.
 Vanuit de root van de robotrepository:
 
 ```sh
-node --test duck-assistant/windows-simulator/conversation.test.mjs
+node --test duck-assistant/windows-simulator/conversation.test.mjs duck-assistant/windows-simulator/search.test.mjs
 node duck-assistant/windows-simulator/install.mjs /pad/naar/microduck-simulator
 ```
 

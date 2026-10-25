@@ -9,11 +9,12 @@ const root = host.attachShadow({ mode: 'open' });
 root.innerHTML = `
 <style>
  :host{position:fixed;right:16px;top:16px;z-index:2147483647;width:min(320px,calc(100vw - 32px));font:14px/1.45 system-ui,sans-serif;color:#f7f5ee}
- section{background:#191c23f5;border:1px solid #696b70;border-radius:16px;padding:18px;box-shadow:0 8px 32px #0006}
+ section{max-height:calc(100vh - 64px);overflow:auto;background:#191c23f5;border:1px solid #696b70;border-radius:16px;padding:18px;box-shadow:0 8px 32px #0006}
  h2{font-size:18px;margin:0 0 6px} p{margin:6px 0} .hint{color:#c8c9cc;font-size:12px}
  button{border:0;border-radius:9px;padding:10px 14px;font:600 14px system-ui;cursor:pointer;background:#ffdc70;color:#181818}
  button:disabled{opacity:.45;cursor:default} button+button{margin-left:6px;background:#414650;color:white}
  .actions{margin:14px 0} #status{min-height:40px;overflow-wrap:anywhere} #text{max-height:150px;overflow:auto;color:#eee}
+ #search-answer{max-height:160px;overflow:auto;white-space:pre-wrap;font-size:12px}
  progress{width:100%;height:8px;accent-color:#ffdc70} a{color:#ffdc70}
  input[type=range]{width:100%;accent-color:#ffdc70} output{font-variant-numeric:tabular-nums}
 </style>
@@ -30,7 +31,11 @@ root.innerHTML = `
  <p class="hint"><label for="voice-pitch">Eendenstem: <output id="voice-pitch-value">5</output></label>
  <input id="voice-pitch" type="range" min="0" max="9" step="1" value="5" aria-label="Hoe hoger, hoe kleiner de eendenstem">
  0 = basisstem · 9 = extra klein en hoog</p>
+ <p id="search-state" class="hint">Google: nog niet verbonden</p>
  <p id="text"></p>
+ <details id="sources" hidden><summary>Gevonden met Google Search</summary>
+ <p id="search-answer"></p>
+ <iframe id="search-suggestions" title="Google Search suggesties" sandbox="allow-popups allow-popups-to-escape-sandbox" referrerpolicy="no-referrer" style="border:0;width:100%;height:150px;background:white" hidden></iframe><div id="source-links"></div></details>
  <p class="hint">Je microfoon blijft tijdens het gesprek open. Klik op Stop om af te sluiten. OpenAI API-gebruik kost apart geld.</p>
 </section>`;
 const start = root.querySelector('#start');
@@ -40,6 +45,27 @@ const conversation = new DuckConversation({
     root.querySelector('#status').textContent = message;
     start.disabled = active;
     stop.disabled = !active;
+  },
+  onSearchReady(ready) { root.querySelector('#search-state').textContent = ready ? 'Google Search ingeschakeld' : 'Google uit — start de gesprekshulp met een Google API-key'; },
+  onSearchResult(result) {
+    const details = root.querySelector('#sources');
+    const links = root.querySelector('#source-links');
+    const suggestions = root.querySelector('#search-suggestions');
+    links.replaceChildren();
+    root.querySelector('#search-answer').textContent = result?.text || '';
+    details.hidden = !result;
+    details.open = Boolean(result);
+    suggestions.hidden = !result?.searchSuggestions;
+    suggestions.srcdoc = result?.searchSuggestions || '';
+    for (const source of result?.sources || []) {
+      let url;
+      try { url = new URL(source.url); } catch { continue; }
+      if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password) continue;
+      const link = document.createElement('a');
+      link.href = url.href; link.textContent = source.title || url.hostname;
+      link.target = '_blank'; link.rel = 'noopener noreferrer';
+      const row = document.createElement('p'); row.append(link); links.append(row);
+    }
   },
   onText(text) { root.querySelector('#text').textContent = text; },
   onLevel(level) {

@@ -1,9 +1,10 @@
-// Browser audio uses WebRTC; the helper only exchanges SDP with OpenAI.
+// Browser audio uses WebRTC; the local helper handles SDP and Google lookup.
+import { SearchTools } from './search-tools.mjs';
 import { createDuckVoice } from './voice.mjs';
 import { AnswerGestureCue } from './gestures.mjs';
 
 export class DuckConversation {
-  constructor({ onStatus = () => {}, onText = () => {}, onLevel = () => {}, onPhase = () => {}, onGesture = () => {},
+  constructor({ onStatus = () => {}, onText = () => {}, onLevel = () => {}, onPhase = () => {}, onGesture = () => {}, onSearchReady = () => {}, onSearchResult = () => {},
     mediaDevices = globalThis.navigator?.mediaDevices,
     makePeer = () => new RTCPeerConnection(),
     makeAudio = () => new Audio(),
@@ -13,7 +14,7 @@ export class DuckConversation {
     // of DuckConversation throws Illegal invocation before making any request.
     fetchImpl = (...args) => globalThis.fetch(...args),
   } = {}) {
-    Object.assign(this, { onStatus, onText, onLevel, onPhase, mediaDevices, makePeer, makeAudio, makeContext, makeVoice, fetchImpl });
+    Object.assign(this, { onStatus, onText, onLevel, onPhase, mediaDevices, makePeer, makeAudio, makeContext, makeVoice, fetchImpl, onSearchReady, onSearchResult });
     this.generation = 0;
     this.voicePitch = 5;
     this.gestureCue = new AnswerGestureCue(onGesture);
@@ -41,7 +42,9 @@ export class DuckConversation {
         signal: AbortSignal.any([controller.signal, AbortSignal.timeout(5000)]),
       });
       if (!health.ok) throw new Error(await health.text());
-      if (!(await health.json()).ready) throw new Error('Vul je API-key in het PowerShell-venster in.');
+      const capabilities = await health.json();
+      this.onSearchReady(Boolean(capabilities.googleSearch));
+      if (!capabilities.ready) throw new Error('Vul je API-key in het PowerShell-venster in.');
       if (!this.mediaDevices?.getUserMedia) throw new Error('Open de simulator op http://localhost:5173 in Chrome of Edge.');
       phase = 'microphone';
       const stream = await this.mediaDevices.getUserMedia({ audio: {
@@ -84,6 +87,19 @@ export class DuckConversation {
       };
       for (const track of stream.getAudioTracks()) peer.addTrack(track, stream);
       const channel = this.channel = peer.createDataChannel('oai-events');
+      this.searchTools = new SearchTools({
+        send: event => { if (current() && channel.readyState === 'open') channel.send(JSON.stringify(event)); },
+        search: async (query, signal) => {
+          const response = await this.fetchImpl('http://127.0.0.1:8787/search', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query }),
+            signal: AbortSignal.any([signal, controller.signal, AbortSignal.timeout(35000)]),
+          });
+          if (!response.ok) throw new Error(await response.text());
+          return response.json();
+        },
+        onState: () => { if (current()) { this.onPhase('thinking'); this.onStatus('Ik zoek het op met Google…', true); } },
+        onResult: result => { if (current()) this.onSearchResult(result); },
+      });
       channel.onmessage = event => {
         if (!current()) return;
         try { this.handleEvent(JSON.parse(event.data)); } catch { /* Ignore non-JSON transport messages. */ }
@@ -161,6 +177,7 @@ export class DuckConversation {
       this.fail(event.error?.message || 'OpenAI meldt een fout.');
     }
     this.gestureCue.handleEvent(event);
+    this.searchTools?.handleEvent(event);
   }
 
   setVoicePitch(value) {
@@ -173,6 +190,9 @@ export class DuckConversation {
   stop() {
     this.generation++;
     this.gestureCue.reset();
+    this.searchTools?.cancel(true);
+    this.searchTools = null;
+    this.onSearchResult(null);
     this.controller?.abort();
     clearInterval(this.meter);
     clearTimeout(this.connectionTimer);

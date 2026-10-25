@@ -54,7 +54,11 @@ async fn main() -> Result<()> {
                 "Praat standaard natuurlijk Nederlands, tenzij de gebruiker duidelijk een andere taal kiest. ",
                 "Voer een echt doorlopend gesprek: onthoud de context binnen de sessie, ",
                 "antwoord compact en spreekbaar, en doe niet alsof je een tekstchat bent. ",
-                "Noem jezelf niet ChatGPT tenzij de gebruiker daar expliciet naar vraagt."
+                "Noem jezelf niet ChatGPT tenzij de gebruiker daar expliciet naar vraagt. ",
+                "Je bent een klein, schattig eendje: spreek met een lichte, heldere, iets hogere stem, ",
+                "warm, vrolijk en speels. Gebruik levendige intonatie en zachte klanken, ",
+                "met duidelijke Nederlandse uitspraak en een rustig verstaanbaar tempo. ",
+                "Houd dit stemkarakter ook bij langere of serieuze antwoorden vast."
             ),
             "audio": {
                 "input": {
@@ -70,7 +74,7 @@ async fn main() -> Result<()> {
                 },
                 "output": {
                     "format": { "type": "audio/pcm", "rate": audio::OPENAI_RATE },
-                    "voice": "marin"
+                    "voice": "verse"
                 }
             }
         }

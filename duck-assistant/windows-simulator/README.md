@@ -74,6 +74,11 @@ antwoord te schudden. De lichaamsbeweging en spraak blijven daarbij doorlopen.
 De microfoon blijft open zolang het gesprek actief is. Een nieuw gestart gesprek
 begint met een lege sessie. Deze versie heeft geen weer-, zoek- of andere tools.
 
+De stem gebruikt `verse`, met instructies voor een lichte, iets hogere, warme en
+speelse eendenstem. Hoe dit klinkt moet je beluisteren; de toonhoogte is geen vaste
+audio-instelling. Na een update van `session.json` moet je de hulpserver opnieuw
+starten en een nieuw gesprek beginnen.
+
 ## Later opnieuw starten
 
 Start de simulator zoals gewoonlijk met `npm.cmd run dev` in zijn `app`-map.

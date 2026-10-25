@@ -121,7 +121,11 @@ Vite, the browser, files, and logs. The PowerShell launcher reads the key with
 hidden input and restores its previous process environment on exit.
 
 The browser session profile preserves the Rust assistant's model, exact Dutch
-instructions, voice and VAD settings; a test guards instruction drift. WebRTC
+instructions, voice and VAD settings; a test guards instruction drift. Both use
+`verse` with Dutch delivery instructions for a light, slightly higher, warm and
+playful duck character. This is prompted delivery, not a fixed pitch transform;
+the perceived voice needs listening validation. The helper reads the profile at
+startup, so profile changes require a helper restart and a new conversation. WebRTC
 negotiates its media format, so this mode does not exercise the robot's 24 kHz
 WebSocket PCM conversion, ALSA capture, Unix socket framing or RobotAudio playback.
 It tests conversational behavior, interruption, browser audio, cosmetic beak

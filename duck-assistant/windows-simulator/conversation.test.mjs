@@ -36,7 +36,8 @@ test('profile preserves the robot Dutch instructions, model, voice and VAD', asy
   const instructions = [...block.matchAll(/"(?:[^"\\]|\\.)*"/g)].map(x => JSON.parse(x[0])).join('');
   assert.equal(profile.instructions, instructions);
   assert.ok(rust.includes(`const DEFAULT_MODEL: &str = "${profile.model}"`));
-  assert.equal(profile.audio.output.voice, 'marin');
+  assert.equal(profile.audio.output.voice, 'verse');
+  assert.ok(rust.includes(`"voice": "${profile.audio.output.voice}"`));
   assert.equal(profile.audio.input.turn_detection.interrupt_response, true);
   assert.equal(profile.audio.input.turn_detection.create_response, true);
   assert.equal(profile.audio.input.turn_detection.silence_duration_ms, 450);

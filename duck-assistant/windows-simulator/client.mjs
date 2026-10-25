@@ -1,4 +1,5 @@
 // Browser audio uses WebRTC; the local helper handles SDP and Google lookup.
+import { cameraStatusTool } from './face-local.mjs';
 import { companionInstructions, memoryTools, memoryHandlers } from './companion.mjs';
 import { SearchTools } from './search-tools.mjs';
 import { createDuckVoice } from './voice.mjs';
@@ -6,7 +7,7 @@ import { AnswerGestureCue } from './gestures.mjs';
 
 export class DuckConversation {
   constructor({ onStatus = () => {}, onText = () => {}, onLevel = () => {}, onPhase = () => {}, onGesture = () => {}, onSearchReady = () => {}, onSearchResult = () => {},
-    companionStore, onMemoryChanged = () => {},
+    companionStore, cameraStatus, onMemoryChanged = () => {},
     mediaDevices = globalThis.navigator?.mediaDevices,
     makePeer = () => new RTCPeerConnection(),
     makeAudio = () => new Audio(),
@@ -16,7 +17,7 @@ export class DuckConversation {
     // of DuckConversation throws Illegal invocation before making any request.
     fetchImpl = (...args) => globalThis.fetch(...args),
   } = {}) {
-    Object.assign(this, { onStatus, onText, onLevel, onPhase, mediaDevices, makePeer, makeAudio, makeContext, makeVoice, fetchImpl, onSearchReady, onSearchResult, companionStore, onMemoryChanged });
+    Object.assign(this, { onStatus, onText, onLevel, onPhase, mediaDevices, makePeer, makeAudio, makeContext, makeVoice, fetchImpl, onSearchReady, onSearchResult, companionStore, cameraStatus, onMemoryChanged });
     this.generation = 0;
     this.voicePitch = companionStore?.preferences.pitch ?? 0;
     this.volume = companionStore?.preferences.volume ?? 1;
@@ -97,7 +98,8 @@ export class DuckConversation {
       for (const track of stream.getAudioTracks()) peer.addTrack(track, stream);
       const channel = this.channel = peer.createDataChannel('oai-events');
       this.searchTools = new SearchTools({
-        extraTools: this.companionStore ? memoryHandlers(this.companionStore, () => this.onMemoryChanged()) : {},
+        extraTools: { ...(this.companionStore ? memoryHandlers(this.companionStore, () => this.onMemoryChanged()) : {}),
+          ...(this.cameraStatus ? { get_camera_status: () => this.cameraStatus() } : {}) },
         send: event => { if (current() && channel.readyState === 'open') channel.send(JSON.stringify(event)); },
         search: async (query, signal) => {
           const response = await this.fetchImpl('http://127.0.0.1:8787/search', {
@@ -199,7 +201,7 @@ export class DuckConversation {
     if (!this.companionStore || !this.baseInstructions) return {};
     const store = this.companionStore;
     return { instructions: this.baseInstructions + companionInstructions(store.preferences, store.memories),
-      tools: [...this.baseTools, ...(store.preferences.memoryEnabled ? memoryTools : [])], tool_choice: 'auto' };
+      tools: [...this.baseTools, ...(store.preferences.memoryEnabled ? memoryTools : []), ...(this.cameraStatus ? [cameraStatusTool] : [])], tool_choice: 'auto' };
   }
 
   updatePersonalization() {

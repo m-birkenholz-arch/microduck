@@ -1,3 +1,4 @@
+import { mountFacePanel } from './face-panel.mjs';
 import { CompanionStore, morningPrompt } from './companion.mjs';
 import { WakeWord } from './wake.mjs';
 import { preparePhoto } from './photo.mjs';
@@ -30,7 +31,7 @@ root.innerHTML = `
  <h2 id="title">Praat met Duck</h2>
  <p class="hint">Nederlands gesprek · gebruik bij voorkeur een koptelefoon</p>
  <div class="actions"><button id="start">Start gesprek</button><button id="stop" disabled>Stop alles</button></div>
- <div class="actions"><button id="morning">Goedemorgen</button><button id="homework">Help met huiswerk</button><button id="standby">Wacht op hé Duck</button></div>
+ <div class="actions"><button id="camera-open">Camera testen</button><button id="morning">Goedemorgen</button><button id="homework">Help met huiswerk</button><button id="standby">Wacht op hé Duck</button></div>
  <p id="wake-state" class="hint">Wekwoord uit</p>
  <p class="hint">Wekwoord gebruikt browser-spraakherkenning, mogelijk online. Microfoon blijft daarvoor aan tot Stop alles, tab verbergen of sluiten.</p>
  <p id="status" role="status" aria-live="polite">Klaar om te praten</p>
@@ -75,14 +76,15 @@ root.innerHTML = `
 </section>`;
 const start = root.querySelector('#start');
 const stop = root.querySelector('#stop');
-let wake;
+let wake, facePanel;
 const conversation = new DuckConversation({
   companionStore: store,
+  cameraStatus: () => facePanel?.camera.status() || { camera_active: false },
   onMemoryChanged() { renderMemories(); conversation.updatePersonalization(); },
   onStatus(message, active) {
     root.querySelector('#status').textContent = message;
     start.disabled = active;
-    stop.disabled = !active && !wake?.enabled;
+    stop.disabled = !active && !wake?.enabled && !facePanel?.camera.active;
     if (active) { wake?.pause(); if (wake?.enabled) root.querySelector('#wake-state').textContent = 'Wekwoord gepauzeerd tijdens gesprek'; }
   },
   onSearchReady(ready) { root.querySelector('#search-state').textContent = ready ? 'Google Search ingeschakeld' : 'Google uit — start de gesprekshulp met een Google API-key'; },
@@ -154,7 +156,7 @@ function applySettings(updateForm = true) {
 }
 let arming = 0;
 function stopAll() {
-  arming++; wake?.disable(); conversation.stop();
+  arming++; wake?.disable(); facePanel?.camera.stop(); conversation.stop();
   $('#photo-preview').hidden = true; $('#photo-preview').removeAttribute('src');
 }
 wake = new WakeWord({
@@ -162,7 +164,7 @@ wake = new WakeWord({
   onWake({ remainder }) {
     void conversation.start({ initialText: remainder || 'Ik roep je bij je naam. Reageer heel kort dat je luistert.' });
   },
-  onState(message) { $('#wake-state').textContent = message; stop.disabled = !wake?.enabled && !conversation.controller; },
+  onState(message) { $('#wake-state').textContent = message; stop.disabled = !wake?.enabled && !conversation.controller && !facePanel?.camera.active; },
 });
 $('#standby').addEventListener('click', async () => {
   const attempt = ++arming;
@@ -220,6 +222,11 @@ $('#nature-photo').addEventListener('change', async event => {
   } catch (error) { notice(error.message); }
   event.target.value = '';
 });
+facePanel = mountFacePanel({ container: root.querySelector('section'), storage, defaultName: store.preferences.userName,
+  onActivity() { stop.disabled = !wake?.enabled && !conversation.controller && !facePanel?.camera.active; },
+  onGreet() { arming++; wake.pause(); void conversation.start({ initialText: 'Gebruik get_camera_status voor de lokale camerastatus. Als een mogelijke naam beschikbaar is, vraag kort en warm of die herkenning klopt en begroet me daarna. Zeg eerlijk als herkennen niet lukte.' }); },
+});
+$('#camera-open').addEventListener('click', () => facePanel.open());
 applySettings();
 if (store.loadError || store.loadNotice) notice(store.loadError || store.loadNotice);
 // Keep UI events away from the simulator's keyboard/gamepad gesture handlers.
@@ -231,6 +238,6 @@ stop.addEventListener('click', stopAll);
 document.body.append(host);
 const hide = () => { if (document.hidden) stopAll(); };
 document.addEventListener('visibilitychange', hide);
-const cleanup = () => { stopAll(); document.removeEventListener('visibilitychange', hide); host.remove(); };
+const cleanup = () => { stopAll(); facePanel?.dispose(); document.removeEventListener('visibilitychange', hide); host.remove(); };
 window.addEventListener('pagehide', cleanup, { once: true });
 if (import.meta.hot) import.meta.hot.dispose(cleanup);

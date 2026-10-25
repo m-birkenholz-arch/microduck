@@ -177,6 +177,64 @@ via de bestaande WebRTC-interface. Die stream en de instellingen/motorbesturing
 moeten later op het echte apparaat worden aangesloten en getest. Foto-input is nu
 een eerste simulatorproef, geen continue fysieke camera-integratie.
 
+## Laptopcamera en gezichtsherkenning
+
+Dit is een lokale test voor het herkennen van bewust aangeleerde gezichten.
+Klik bovenaan **Camera testen**, open zo nodig de sectie **Laptopcamera en
+gezichtsherkenning**, en klik **Camera starten**. Geef de browser cameratoegang.
+Deze aanvraag vraagt alleen video, geen extra microfoon. De bestaande spraak-
+verbinding kan tegelijk blijven werken.
+
+De eerste installatie vereist `install.ps1 -FaceCamera` (eventueel samen met
+`-GoogleSearch -RestartHelper`). De installer downloadt circa 8 MB aan vaste
+face-api.js 0.22.2-bestanden uit één upstream Git-commit, controleert SHA-256 en
+bewaart ook de licentie. De bestanden worden onder `app/public/duck-face` lokaal
+geserveerd. Browserherkenning doet geen modeldownloads naar een externe CDN en
+stuurt geen camerabeelden naar een cloudservice. Er is geen extra API-key nodig
+voor de camerafunctie. Ontbreken de modellen, dan geeft Camera starten een melding
+om met `-FaceCamera` te installeren. Latere gewone updates behouden de modellen.
+
+Zo leer je je gezicht aan:
+
+1. Ga alleen voor de camera zitten, met goed licht en het gezicht recht naar voren.
+2. Wacht tot **Leer mijn gezicht** beschikbaar wordt (drie duidelijke metingen).
+3. Vul je naam in en klik **Leer mijn gezicht**. Er wordt een profiel lokaal
+   bewaard met je naam en drie reeksen getallen, geen foto's of video.
+4. Wacht op **Lijkt op [naam] (herkenningsproef)**. Onbekende, onduidelijke of
+   te sterk op elkaar lijkende gezichten krijgen geen naam. Bij meerdere gezichten
+   wordt geen naam gekozen en kun je niet aanleren.
+
+Er passen maximaal vijf profielen in **Mijn gezichtsprofielen**. Leer alleen
+jezelf aan of iemand die hiervoor toestemming geeft. Namen en numerieke
+gezichtsprofielen staan als leesbare gegevens apart in localStorage van deze
+browser/origin. Ze worden niet in GitHub of het gewone gesprekgeheugen opgeslagen.
+Je kunt losse profielen verwijderen of **Wis alle gezichtsprofielen** gebruiken;
+verwijderen stopt ook de cameraloop om oude herkenning direct te wissen.
+
+Wil je dat moeder-eend je herkent tijdens het praten? Zet bewust **Duck mag de
+herkende naam gebruiken** aan. Vraag dan **“Herken je mij?”**, of klik **Laat Duck
+mij begroeten** om een nieuw gesprek te starten. De lokale statusfunctie geeft
+alleen of de camera aanstaat, het aantal gezichten en na deze toestemming een
+mogelijke naam terug aan OpenAI. Zij ontvangt geen videobeeld, foto of descriptor.
+Zonder dit vinkje blijven namen lokaal; aantallen en camera-aan/uit kunnen wel
+worden uitgelezen. Er worden geen spontane herkenningsberichten of begroetingen
+gestuurd. Een naam die al besproken is kan in het lopende gesprek blijven staan;
+uitzetten/wissen verwijdert geen historische providergegevens.
+
+**Camera stoppen** sluit alleen video af. **Stop alles**, tab verbergen, herladen
+of sluiten stopt ook de camera, eventuele herkenningslus en naamdeling. De camera
+begint nooit vanzelf opnieuw en het naamdelen staat na stoppen weer uit. De
+camerafunctie werkt los van de Google-key; de begroeting/gesprekken vereisen wel
+de gewone gesprekshulp met OpenAI-key.
+
+Dit is geen beveiligings- of identiteitscontrole: licht, pose en camera beïnvloeden
+het resultaat, een foto kan voor een echt gezicht doorgaan en herkenning kan
+fouten maken. Er wordt geen leeftijd, geslacht, emotie of andere persoonskenmerk
+bepaald. De fysieke robotcamera en gezichtsafhankelijke motorreacties zijn nog
+niet aangesloten. Test nu eerst je laptopcamera in Chrome of Edge op localhost.
+Als openen niet lukt: controleer cameratoestemming in de browser en Windows en
+sluit eventueel andere camera-apps.
+
 ## Google Search inschakelen
 
 Voor kennisvragen (bijvoorbeeld Obama, hoe een motor werkt of het weer) kan de
@@ -247,7 +305,7 @@ API-tegoed en modeltoegang hebben.
 Vanuit de root van de robotrepository:
 
 ```sh
-node --test duck-assistant/windows-simulator/conversation.test.mjs duck-assistant/windows-simulator/search.test.mjs duck-assistant/windows-simulator/companion.test.mjs
+node --test duck-assistant/windows-simulator/conversation.test.mjs duck-assistant/windows-simulator/search.test.mjs duck-assistant/windows-simulator/companion.test.mjs duck-assistant/windows-simulator/face.test.mjs
 node duck-assistant/windows-simulator/install.mjs /pad/naar/microduck-simulator
 ```
 

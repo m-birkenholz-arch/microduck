@@ -1,5 +1,6 @@
 import { readFile, writeFile, mkdir, copyFile, access } from 'node:fs/promises';
 import path from 'node:path';
+import { faceAssets, verifyFaceAssets } from './face-assets.mjs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const source = path.dirname(fileURLToPath(import.meta.url));
@@ -37,7 +38,7 @@ const headHook = `// Conversation head and body offsets use the existing policy 
 const recoveryChoice = 'if (recovery?.state === "recovering") return sessions.stand;';
 const standChoice = 'if (useConversationStand(conversationMotionAllowed())) return sessions.stand;';
 
-export async function install(simulatorPath) {
+export async function install(simulatorPath, { faceAssetsPath = path.join(source, 'face-assets') } = {}) {
   const app = path.join(path.resolve(simulatorPath), 'app');
   const indexPath = path.join(app, 'index.html');
   const gamePath = path.join(app, 'src', 'game', 'game.js');
@@ -49,10 +50,18 @@ export async function install(simulatorPath) {
   if (!game.includes(headHook) && !game.includes(legacyHeadHook) && game.split(oldHead).length !== 2) throw new Error('Hoofdsturing wijkt af; installatie afgebroken zonder wijzigingen.');
   if (!game.includes('function buildObs() {') || game.split(recoveryChoice).length !== 2) throw new Error('Policyselectie wijkt af; installatie afgebroken zonder wijzigingen.');
   if (game.includes('function conversationMotionAllowed()') && !game.includes(allowedHelper)) throw new Error('Gespreksbesturing wijkt af; installatie afgebroken zonder wijzigingen.');
+  let copyFaceAssets = false;
+  try { await access(faceAssetsPath); copyFaceAssets = true; } catch { /* Optional until installed with -FaceCamera. */ }
+  if (copyFaceAssets) await verifyFaceAssets(faceAssetsPath);
   const destination = path.join(app, 'src', 'duck-conversation');
   await mkdir(destination, { recursive: true });
-  for (const name of ['panel.mjs', 'client.mjs', 'mouth.mjs', 'motion.mjs', 'gestures.mjs', 'voice.mjs', 'voice-worklet.mjs', 'search-tools.mjs', 'companion.mjs', 'wake.mjs', 'photo.mjs']) {
+  for (const name of ['panel.mjs', 'client.mjs', 'mouth.mjs', 'motion.mjs', 'gestures.mjs', 'voice.mjs', 'voice-worklet.mjs', 'search-tools.mjs', 'companion.mjs', 'wake.mjs', 'photo.mjs', 'face-local.mjs', 'face-panel.mjs']) {
     await copyFile(path.join(source, name), path.join(destination, name));
+  }
+  if (copyFaceAssets) for (const entry of faceAssets.files) {
+    const target = path.join(app, 'public', 'duck-face', entry.target);
+    await mkdir(path.dirname(target), { recursive: true });
+    await copyFile(path.join(faceAssetsPath, entry.target), target);
   }
   for (const file of [indexPath, gamePath]) {
     try { await access(file + '.before-conversation'); }

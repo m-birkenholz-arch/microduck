@@ -225,6 +225,75 @@ rendering, wake start/stop and cleanup; it is not a real Windows microphone test
 Interface references: [Realtime image inputs](https://developers.openai.com/api/docs/guides/realtime-conversations#image-inputs)
 and [browser SpeechRecognition](https://developer.mozilla.org/en-US/docs/Web/API/SpeechRecognition).
 
+### Local laptop face recognition
+
+`face-local.mjs` runs an opt-in browser-only face detection/recognition experiment.
+No camera frames are sent through Realtime, the helper or Google. `Camera testen`
+opens controls, then an explicit camera-start click requests user-facing video
+640x480 with `audio: false`. Preview and bounding rectangles are mirrored together.
+There is no physical robot camera bridge or identity-driven movement command.
+The pre-existing explicit photo upload remains independent of this live camera.
+
+`install.ps1 -FaceCamera` runs `face-assets.mjs`, downloading the minified browser
+bundle, three model manifests and their shards, and the upstream license from
+face-api.js 0.22.2 commit `8609b25a15f417398a4d2b95dc91985cd1e0c0c3`.
+`face-assets.json` records exact sizes and SHA-256 digests. Downloads use temporary
+files, reject invalid content and reuse only verified cached files. The overlay
+installer validates the complete optional asset set before copying it to
+`app/public/duck-face`. Binaries are downloaded on the user's laptop, not stored
+in this repository. Once installed, browser script/weight requests are same-origin
+only. Missing models give a setup instruction. Script/model loading has bounded
+timeouts. WebGL is preferred with CPU fallback; the simulator and voice worklet
+keep their existing independent pipelines.
+
+Only TinyFaceDetector, the tiny 68-point landmark network and the 128-dimensional
+recognition network are loaded. No age/gender/emotion or other attribute heads
+are loaded or invoked. Inference is serial, with a 750 ms pause between completed
+passes. A usable enrollment observation requires exactly one face, score >=0.8,
+and a box >=100x100 pixels. Three recent, consistent descriptor samples are needed
+before the explicit Learn button can create a record. Enrollment rejects invalid
+vectors, excessive variation, duplicate names and measurements that already
+match an existing profile. There is no silent enrollment or image archive.
+
+`FaceGallery` owns a separate plaintext localStorage key, `microduck.faces.v1`,
+with the engine version, up to five opaque IDs, user-supplied names and three
+128-number templates per person. Storage failure is not acknowledged as saved.
+The ordinary memory toggle/clear function does not delete this separate gallery;
+it has its own per-profile and clear-all controls. Match scoring uses minimum
+Euclidean distance over a person's samples, threshold 0.45 and at least 0.08
+margin against the next person. A name is surfaced only after three consecutive
+single-face matches. No face, multiple faces, poor quality, unknown/ambiguous
+results or a >5 second stale observation withhold the name immediately. These
+are conservative heuristic thresholds, not calibrated identity probabilities.
+There is no liveness proof: photos and false matches are possible.
+
+The local `get_camera_status` Realtime function is read-only and never starts a
+camera. It returns active state and a recent face count, plus a possible name only
+when the user opts in to name sharing in the camera panel. It never exposes images,
+landmarks or descriptors to the model. It is invoked in response to a conversation
+request, not periodically; a dedicated greeting button starts a fresh conversation
+asking the model to check this tool and acknowledge uncertainty. The base Dutch
+voice/profile, Google tools and explicit memory functions remain present. Names
+are untrusted data, not instructions. Sharing defaults off, is not persisted and
+resets on stop. Already shared names can remain in the conversation/provider
+history; disabling sharing is not retrospective deletion.
+
+Stop, hidden tab, page exit and HMR close camera tracks, reset samples/results,
+clear the serial-loop timer and disable sharing. Generation guards release tracks
+granted after Stop and ignore late model/detection completion without reopening
+the camera. Explicit profile deletion also stops recognition to clear old matches.
+Model weights can remain cached in browser memory until page exit, but are not a
+camera recording. Readiness/consent controls and profile names use DOM text APIs.
+
+Validation includes lifecycle/matching/storage/hash tests, DOM enrollment/share/
+delete smoke checks and real CPU inference on two upstream test-face fixtures.
+The real model smoke check confirms detection/descriptor extraction and separation
+of those fixtures; it is not a recognition accuracy benchmark. Real Windows camera,
+GPU performance and false-match behavior require the user's live trial. Rust
+workspace code and hardware paths are unchanged.
+
+Upstream implementation/API: [face-api.js](https://github.com/justadudewhohacks/face-api.js/tree/8609b25a15f417398a4d2b95dc91985cd1e0c0c3).
+
 ### Google Search for browser conversations
 
 When a Google API key is present, the helper adds the `search_web` function and

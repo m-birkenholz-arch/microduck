@@ -737,3 +737,21 @@ test('a prepared wake context is reused, Stop closes a late unlock, and photos u
   const priming = g.duck.primeAudio(); g.duck.stop(); resolve(); await priming;
   assert.equal(g.duck.primedContext, null); assert.equal(closed, 1);
 });
+
+test('camera status is a read-only local tool, called only when requested and returning no frames or templates', async t => {
+  let calls = 0;
+  const f = browserFixture({ companionStore: { preferences: {}, memories: [] }, cameraStatus: () => {
+    calls++; return { camera_active: true, name_sharing: false, face_count: 1, possibly_recognized_name: null };
+  }, fetchImpl: async url => url.endsWith('/health') ? Response.json({ ready: true, companionVersion: 1, instructions: profile.instructions, tools: [] }) : new Response('v=0\r\nanswer') });
+  t.after(() => f.duck.stop()); await f.duck.start(); f.channel.onopen();
+  assert.ok(f.channel.messages[0].session.tools.some(x => x.name === 'get_camera_status'));
+  assert.equal(calls, 0, 'session startup must not read or enable a camera');
+  f.channel.onmessage({ data: JSON.stringify({ type: 'response.done', response: { id: 'r', status: 'completed', output: [
+    { type: 'function_call', name: 'get_camera_status', call_id: 'camera', arguments: '{}' },
+  ] } }) });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(calls, 1);
+  const result = JSON.parse(f.channel.messages.find(x => x.item?.call_id === 'camera').item.output).result;
+  assert.equal(result.possibly_recognized_name, null); assert.equal(result.face_count, 1);
+  assert.ok(!JSON.stringify(result).includes('descriptor'));
+});

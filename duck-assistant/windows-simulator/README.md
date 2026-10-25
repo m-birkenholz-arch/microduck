@@ -40,17 +40,23 @@ Ververs `http://localhost:5173`. Rechtsboven staat **Praat met Microduck**:
 4. Praat door een antwoord heen om onderbreken te proberen.
 5. Klik op **Stop** om de verbinding en de microfoon af te sluiten.
 
-**Hoofd en nek bewegen mee** schakelt de lichaamsreacties aan of uit.
-Met **Sterkte beweging** kies je 1× tot 4×; standaard staat dit op 3× zodat de
-reacties ook bij zacht laptopgeluid zichtbaar zijn.
-Tijdens
-spreken beweegt de kop met het volume en de bestaande expressieve zangbeweging.
-Tijdens luisteren kantelt de kop rustig. De reacties worden naar neutraal gedempt
-wanneer het gesprek stopt. Ze wijken voor lopen, handmatige hoofdbesturing,
-trucs, oppakken, herstel, scripts en community-policies. De simulator gebruikt
-daarvoor zijn bestaande hoofdcommando's en smoothing. Romp- en beenbewegingen
-zijn niet toegevoegd; de robotcode ondersteunt body-breathing alleen met een
-daarvoor getrainde staande policy.
+**Hoofd en nek bewegen mee** en **Lichaam beweegt mee** kunnen apart aan of uit.
+Met **Sterkte beweging** kies je 1× tot 4×; standaard staat dit op 3×.
+Tijdens spreken beweegt de kop met het volume en de bestaande expressieve
+zangbeweging. De romp wiegt en buigt rustig mee en maakt een kleine op-en-neer-
+beweging. Tijdens luisteren kantelt de kop en neemt de romp een rustige houding aan.
+
+Voor rompbewegingen schakelt de simulator bij stilstaan naar zijn bestaande
+`BEST_alpha_stand.onnx`: het getrainde staande/body-pose model. Dit stuurt de
+benen via de normale policy en physics; het model wordt niet alleen visueel
+verschoven. Bij Stop of het uitzetten van lichaamsbewegingen gaat de houding
+geleidelijk naar neutraal voordat de gewone walking-policy terugkomt.
+
+Lopen, handmatige hoofdbesturing, trucs, oppakken, herstel, scripts en community-
+policies krijgen meteen voorrang. Tijdens die acties zijn gespreksbewegingen
+uitgeschakeld; er worden geen bewegingen opgespaard. De Rust-robotcode wordt
+hiermee niet aangepast. Stabiliteit en zichtbaarheid moeten in de simulator
+worden gecontroleerd.
 
 De microfoon blijft open zolang het gesprek actief is. Een nieuw gestart gesprek
 begint met een lege sessie. Deze versie heeft geen weer-, zoek- of andere tools.

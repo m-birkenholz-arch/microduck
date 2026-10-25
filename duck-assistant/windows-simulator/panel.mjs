@@ -24,8 +24,9 @@ root.innerHTML = `
  <p id="status" role="status" aria-live="polite">Klaar om te praten</p>
  <progress id="level" max="1" value="0" aria-label="Stemvolume Microduck"></progress>
  <p class="hint"><label><input id="motion" type="checkbox" checked> Hoofd en nek bewegen mee</label></p>
+ <p class="hint"><label><input id="body-motion" type="checkbox" checked> Lichaam beweegt mee</label></p>
  <p class="hint"><label for="strength">Sterkte beweging: <output id="strength-value">3×</output></label>
- <input id="strength" type="range" min="1" max="4" step="0.5" value="3" aria-label="Sterkte hoofd- en nekbeweging"></p>
+ <input id="strength" type="range" min="1" max="4" step="0.5" value="3" aria-label="Sterkte lichaamsreacties"></p>
  <p id="text"></p>
  <p class="hint">Je microfoon blijft tijdens het gesprek open. Klik op Stop om af te sluiten. OpenAI API-gebruik kost apart geld.</p>
 </section>`;
@@ -47,7 +48,11 @@ const conversation = new DuckConversation({
 });
 root.querySelector('#motion').addEventListener('change', event => {
   conversationMotion.enabled = event.target.checked;
-  root.querySelector('#strength').disabled = !event.target.checked;
+  root.querySelector('#strength').disabled = !conversationMotion.enabled && !conversationMotion.bodyEnabled;
+});
+root.querySelector('#body-motion').addEventListener('change', event => {
+  conversationMotion.bodyEnabled = event.target.checked;
+  root.querySelector('#strength').disabled = !conversationMotion.enabled && !conversationMotion.bodyEnabled;
 });
 root.querySelector('#strength').addEventListener('input', event => {
   conversationMotion.setStrength(Number(event.target.value));

@@ -12,7 +12,7 @@ import { install } from './install.mjs';
 import { ConversationMotion, headExpression } from './motion.mjs';
 
 const originalHead = 'for (let h = 0; h < 4; h++) headSmooth[h] += HEAD_ALPHA * (headTarget[h] - headSmooth[h]);';
-const originalGame = `function buildObs() { ${originalHead} }\nfunction jawOpenNow() { return Math.min(1, pickJawNow() + Math.max(flap, padJaw)); }`;
+const originalGame = `function buildObs() { ${originalHead} }\nfunction jawOpenNow() { return Math.min(1, pickJawNow() + Math.max(flap, padJaw)); }\nfunction activeSession() { if (recovery?.state === "recovering") return sessions.stand; return sessions[loco === "rollers" && mode === "walk" ? "drive" : mode]; }`;
 
 const offer = 'v=0\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\n';
 const origin = 'http://localhost:5173';
@@ -122,7 +122,11 @@ test('upgrading a jaw-only install preserves manual head targets and yields to o
   const context = {
     CTRL_DT: 0.02, HEAD_ALPHA: 0.2, inputLocked: false, mode: 'walk', loco: 'legs',
     headMode: false, recovery: null, grab: null, scriptRun: null, customPolicy: null,
-    postKickLock: 0, standTimer: null, cmd: [0, 0, 0],
+    postKickLock: 0, standTimer: null, cmd: new Float32Array(13),
+    effectiveCmd: () => context.cmd,
+    getConversationBody: () => [0.004, 0.02, -0.03],
+    useConversationStand: allowed => allowed,
+    sessions: { walk: 'walking', stand: 'standing', drive: 'driving' },
     headTarget: [0.3, -0.1, 0.2, 0.1], headSmooth: [0, 0, 0, 0],
     stepConversationHead: (dt, allowed) => allowed ? [0.01, -0.04, 0.03, 0.02] : [0, 0, 0, 0],
   };
@@ -131,6 +135,11 @@ test('upgrading a jaw-only install preserves manual head targets and yields to o
   context.buildObs();
   assert.ok(Math.abs(context.headSmooth[0] - 0.2 * 0.31) < 1e-10);
   assert.deepEqual(context.headTarget, [0.3, -0.1, 0.2, 0.1]);
+  assert.equal(context.activeSession(), 'standing');
+  assert.ok(Math.abs(context.cmd[9] - 0.004) < 1e-8);
+  assert.ok(Math.abs(context.cmd[10] - 0.02) < 1e-8);
+  assert.ok(Math.abs(context.cmd[11] + 0.03) < 1e-8);
+  for (const slot of [7, 8, 12]) assert.equal(context.cmd[slot], 0);
   for (const override of [
     { inputLocked: true }, { mode: 'groundpick' }, { mode: 'sitstand' }, { mode: 'kickL' },
     { mode: 'roll' }, { loco: 'rollers' }, { headMode: true }, { recovery: {} },
@@ -142,6 +151,13 @@ test('upgrading a jaw-only install preserves manual head targets and yields to o
     context.headSmooth = [0, 0, 0, 0];
     context.buildObs();
     for (let h = 0; h < 4; h++) assert.equal(context.headSmooth[h], 0.2 * context.headTarget[h]);
+    for (const slot of [7, 8, 9, 10, 11, 12]) assert.equal(context.cmd[slot] || 0, 0);
+    if (override.recovery) {
+      context.recovery = { state: 'recovering' };
+      assert.equal(context.activeSession(), 'standing', 'fall recovery retains its standing network');
+    } else if (!override.mode) {
+      assert.notEqual(context.activeSession(), 'standing', 'manual movement must release conversation standing');
+    }
     Object.assign(context, before);
   }
 });
@@ -243,6 +259,67 @@ test('quiet speech has visible motion and strength can be adjusted within bounde
   motion.setStrength(100); assert.equal(motion.strength, 4);
   motion.setStrength(-1); assert.equal(motion.strength, 1);
   motion.setStrength(NaN); assert.equal(motion.strength, 3);
+});
+
+test('body sway uses bounded standing poses, fades before releasing standing, and yields immediately', () => {
+  const motion = new ConversationMotion();
+  assert.equal(motion.wantsStand(true), false);
+  motion.setPhase('speaking');
+  motion.setLevel(0.8);
+  assert.equal(motion.wantsStand(true), true);
+  const peak = [0, 0, 0];
+  let previous = [0, 0, 0];
+  for (let step = 0; step < 1000; step++) {
+    motion.step(0.02, true);
+    motion.body.forEach((value, axis) => {
+      assert.ok(Math.abs(value) <= (axis === 0 ? 0.008 : 0.10));
+      assert.ok(Math.abs(value - previous[axis]) < (axis === 0 ? 0.0006 : 0.01));
+      peak[axis] = Math.max(peak[axis], Math.abs(value));
+    });
+    previous = [...motion.body];
+  }
+  assert.ok(peak[0] > 0.002 && peak[1] > 0.03 && peak[2] > 0.04);
+  motion.setPhase('off');
+  assert.equal(motion.wantsStand(true), true, 'keep standing through neutral return');
+  for (let step = 0; step < 400; step++) motion.step(0.02, true);
+  assert.deepEqual(motion.body, [0, 0, 0]);
+  assert.equal(motion.wantsStand(true), false);
+  motion.setPhase('speaking');
+  motion.setLevel(1);
+  for (let step = 0; step < 100; step++) motion.step(0.02, true);
+  assert.equal(motion.wantsStand(false), false);
+  motion.step(0.02, false);
+  assert.deepEqual(motion.body, [0, 0, 0]);
+  assert.deepEqual(motion.head, [0, 0, 0, 0]);
+});
+
+test('body and head toggles are independent', () => {
+  const motion = new ConversationMotion();
+  motion.setPhase('speaking');
+  motion.setLevel(0.8);
+  motion.enabled = false;
+  for (let step = 0; step < 100; step++) motion.step(0.02, true);
+  assert.deepEqual(motion.head, [0, 0, 0, 0]);
+  assert.ok(motion.body.some(value => Math.abs(value) > 0.01));
+  motion.enabled = true;
+  motion.bodyEnabled = false;
+  for (let step = 0; step < 400; step++) motion.step(0.02, true);
+  assert.deepEqual(motion.body, [0, 0, 0]);
+  assert.ok(motion.head.some(value => Math.abs(value) > 0.01));
+  assert.equal(motion.wantsStand(true), false);
+});
+
+test('installer refuses unknown standing policy selection before editing', async t => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'duck-policy-version-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await mkdir(path.join(root, 'app/src/game'), { recursive: true });
+  const index = '<body>untouched</body>';
+  const game = originalGame.replace('if (recovery?.state === "recovering") return sessions.stand;', '// unknown session selector');
+  await writeFile(path.join(root, 'app/index.html'), index);
+  await writeFile(path.join(root, 'app/src/game/game.js'), game);
+  await assert.rejects(install(root), /Policyselectie wijkt af/);
+  assert.equal(await readFile(path.join(root, 'app/index.html'), 'utf8'), index);
+  assert.equal(await readFile(path.join(root, 'app/src/game/game.js'), 'utf8'), game);
 });
 
 test('installer refuses an unknown simulator version before editing files', async t => {

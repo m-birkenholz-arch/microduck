@@ -152,9 +152,34 @@ before editing any source. The extension yields while moving, in head mode,
 during boot/respawn, sit/skills, recovery, dragging, scripts, community policies,
 roller mode and stand-up/post-kick transitions. There is no queue of gestures to
 replay when these end. The head offsets fade toward zero at Stop, and can be
-disabled separately from voice. Body pose/leg reactions are not added: the
-robot's idle body-breathing path is limited to a trained standing network and
-cannot be assumed to work in the browser walker's body command slots.
+disabled separately from voice.
+
+### Standing body reactions
+
+The official browser simulator already loads `BEST_alpha_stand.onnx` for recovery.
+It is the alpha standing/body-pose network (the old standing slot documented in
+`deploy/robotd.toml`). While the conversation asks for body movement and the duck
+is stationary in ordinary legs/walk mode, the existing session selector now uses
+this standing network. Recovery retains first priority. This avoids feeding
+unsupported body-pose requests to the walking policy or faking a rendered pose.
+
+The same conversation tick produces bounded body `[z, roll, pitch]` offsets:
+small breathing/weight shifts while speaking, a held attentive posture while
+listening, all smoothed. These enter command slots 9/10/11, the observation's
+57/58/59. Body x/y/yaw (slots 7/8/12) stay zero. Scripts retain their existing
+final ownership of the full command vector. No direct changes to MuJoCo qpos,
+actuator outputs or rendered transforms are made by the conversation extension.
+
+Body height is capped at +/-0.008 m and roll/pitch at +/-0.10 rad. The existing
+manual/movement/skill/recovery gates override body reactions immediately. Stop,
+disabling body motion or a closed session fades the pose to zero; the standing
+network remains selected through that return, then the ordinary session resumes.
+The independent body toggle does not change head motion or voice.
+
+Tests cover pose slot layout, zeros in the untrained slots, policy selection,
+recovery priority, immediate manual takeover, bounded/smooth motion, neutral
+return and independent toggles. Simulator balance and model-to-model transitions
+still need observing on the laptop; none of this is a hardware validation.
 
 The browser build and automated tests do not establish Windows device access or
 live OpenAI account/model access; those require a conversation on the laptop.

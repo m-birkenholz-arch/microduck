@@ -26,7 +26,7 @@ try {
         finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer); $secureKey.Dispose() }
     }
     if ($GoogleSearch -and -not $env:GOOGLE_API_KEY -and -not $env:GEMINI_API_KEY) {
-        Write-Host 'Vul je Google AI Studio API-key in voor Google Search. Deel deze niet in de chat.'
+        Write-Host 'Vul je Google AI Studio API-key in voor Google Search en beeldanalyse. Deel deze niet in de chat.'
         $secureGoogleKey = Read-Host 'Google API-key (plakken en Enter)' -AsSecureString
         $googlePointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureGoogleKey)
         try { $env:GOOGLE_API_KEY = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($googlePointer) }

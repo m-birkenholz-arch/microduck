@@ -55,7 +55,7 @@ export async function install(simulatorPath, { faceAssetsPath = path.join(source
   if (copyFaceAssets) await verifyFaceAssets(faceAssetsPath);
   const destination = path.join(app, 'src', 'duck-conversation');
   await mkdir(destination, { recursive: true });
-  for (const name of ['panel.mjs', 'client.mjs', 'mouth.mjs', 'motion.mjs', 'gestures.mjs', 'voice.mjs', 'voice-worklet.mjs', 'search-tools.mjs', 'companion.mjs', 'wake.mjs', 'photo.mjs', 'face-local.mjs', 'face-engine.mjs', 'face-panel.mjs']) {
+  for (const name of ['vision.mjs', 'panel.mjs', 'client.mjs', 'mouth.mjs', 'motion.mjs', 'gestures.mjs', 'voice.mjs', 'voice-worklet.mjs', 'search-tools.mjs', 'companion.mjs', 'wake.mjs', 'photo.mjs', 'face-local.mjs', 'face-engine.mjs', 'face-panel.mjs']) {
     await copyFile(path.join(source, name), path.join(destination, name));
   }
   if (copyFaceAssets) for (const entry of faceAssets.files) {

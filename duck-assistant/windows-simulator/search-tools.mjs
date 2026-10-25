@@ -19,10 +19,10 @@ export class SearchTools {
     const calls = (event.response.output || []).filter(item => item.type === 'function_call' && item.call_id && !this.seen.has(item.call_id));
     if (!calls.length) return;
     const epoch = this.epoch;
-    let searches = 0;
+    let searches = 0, visions = 0;
     const tasks = calls.map(call => {
       this.remember(this.seen, call.call_id);
-      return this.run(call, epoch, call.name === 'search_web' ? searches++ : 0);
+      return this.run(call, epoch, call.name === 'search_web' ? searches++ : call.name === 'analyze_camera' ? visions++ : 0);
     });
     void Promise.all(tasks).then(() => {
       if (this.epoch === epoch) this.send({ type: 'response.create', response: { tool_choice: 'none' } });
@@ -41,7 +41,8 @@ export class SearchTools {
       const args = JSON.parse(call.arguments);
       if (call.name !== 'search_web') {
         if (!Object.hasOwn(this.extraTools, call.name) || !args || typeof args !== 'object' || Array.isArray(args)) throw new Error('Onbekende of ongeldige functie.');
-        const result = await this.extraTools[call.name](args);
+        if (call.name === 'analyze_camera' && index > 0) throw new Error('Alleen één camerabeeld per antwoord is toegestaan.');
+        const result = await this.extraTools[call.name](args, controller.signal);
         if (epoch === this.epoch) this.output(call.call_id, { ok: true, result });
         return;
       }

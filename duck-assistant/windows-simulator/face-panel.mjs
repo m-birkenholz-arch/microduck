@@ -1,3 +1,4 @@
+import { captureCamera } from './vision.mjs';
 import { FaceGallery, LocalFaceCamera } from './face-local.mjs';
 
 export function drawFaceOverlay(canvas, video, faces, match) {
@@ -13,12 +14,12 @@ export function drawFaceOverlay(canvas, video, faces, match) {
   } catch { canvas.hidden = true; return false; } // A rectangle must never stop video or recognition.
 }
 
-export function mountFacePanel({ container, storage, defaultName = '', onActivity = () => {}, onGreet = () => {}, onContext = () => {}, cameraOptions = {} }) {
+export function mountFacePanel({ container, storage, defaultName = '', onActivity = () => {}, onGreet = () => {}, onContext = () => {}, onView = () => {}, cameraOptions = {} }) {
   const section = document.createElement('details');
   section.id = 'face-test';
   section.innerHTML = `
     <summary>Laptopcamera en gezichtsherkenning</summary>
-    <p class="hint">Lokale proef. Beelden en gezichtsprofielen worden niet naar OpenAI of Google gestuurd. Start de camera zelf; Stop alles of tab verbergen sluit hem af.</p>
+    <p class="hint">Lokale proef. Gezichtsherkenning blijft lokaal. Alleen met de aparte optie voor Google-beeldanalyse wordt op jouw verzoek een camerabeeld gedeeld. Start de camera zelf; Stop alles of tab verbergen sluit hem af.</p>
     <div id="face-preview" hidden style="position:relative">
       <video id="face-video" width="640" height="480" muted playsinline style="display:block;width:100%;height:auto;transform:scaleX(-1)"></video>
       <canvas id="face-overlay" width="640" height="480" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;transform:scaleX(-1)"></canvas>
@@ -32,6 +33,9 @@ export function mountFacePanel({ container, storage, defaultName = '', onActivit
     <p><label><input id="face-share" type="checkbox" disabled> Duck mag de herkende naam gebruiken</label></p>
     <button id="face-greet" disabled>Laat Duck mij begroeten</button>
     <p class="hint">Met naamdelen kan de gesprekshulp automatisch mogelijke namen en een mogelijke spreker gebruiken tijdens het gesprek; geen beeld of gezichtsprofiel. Sprekerherkenning is een proef met mondbeweging tijdens spraak, geen stemherkenning. Bij twijfel vraagt Duck wie praat. Een eerder gedeelde naam kan nog in het lopende gesprek staan. Herkenning kan zich vergissen en een foto kan voor een gezicht doorgaan. Gebruik dit niet als toegangsbeveiliging.</p>
+    <p><label><input id="vision-share" type="checkbox" disabled> Camerabeelden delen met Google</label></p>
+    <button id="vision-view" disabled>Bekijk dit</button>
+    <p class="hint">Bij “Bekijk dit” of een vraag over wat je laat zien, wordt één camerabeeld naar Google Gemini gestuurd. De beschrijving gaat naar de gesprekshulp. Geen doorlopende upload; je kunt deze toestemming hier uitzetten. API-gebruik kan geld kosten.</p>
     <details><summary>Mijn gezichtsprofielen</summary><div id="face-profiles"></div><button id="face-clear">Wis alle gezichtsprofielen</button></details>`;
   container.insertBefore(section, container.querySelector('#settings-state'));
   const $ = selector => section.querySelector(selector), gallery = new FaceGallery(storage);
@@ -42,7 +46,9 @@ export function mountFacePanel({ container, storage, defaultName = '', onActivit
       $('#face-start').disabled = camera.active; $('#face-stop').disabled = !camera.active;
       $('#face-retry').disabled = !camera.active || !camera.recognitionError;
       $('#face-share').disabled = !camera.active;
-      if (!camera.active) $('#face-share').checked = false;
+      $('#vision-share').disabled = !camera.active;
+      if (!camera.active) { $('#face-share').checked = false; $('#vision-share').checked = false; }
+      $('#vision-view').disabled = !camera.active || !camera.shareImage;
       $('#face-preview').hidden = !camera.active;
       onActivity(); onContext();
     },
@@ -87,10 +93,16 @@ export function mountFacePanel({ container, storage, defaultName = '', onActivit
     onContext();
     $('#face-greet').disabled = !camera.match || !camera.shareName;
   });
+  $('#vision-share').addEventListener('change', event => {
+    camera.shareImage = event.target.checked;
+    $('#vision-view').disabled = !camera.active || !camera.shareImage;
+    onContext();
+  });
+  $('#vision-view').addEventListener('click', () => onView());
   $('#face-greet').addEventListener('click', () => {
     if (camera.shareName && camera.status().possibly_recognized_name) onGreet();
   });
   profiles();
   if (gallery.loadError) $('#face-state').textContent = gallery.loadError;
-  return { camera, gallery, open() { section.open = true; section.scrollIntoView?.({ block: 'nearest' }); }, dispose() { camera.stop(); section.remove(); } };
+  return { camera, gallery, capture() { return captureCamera($('#face-video'), { allowed: camera.active && camera.shareImage }); }, open() { section.open = true; section.scrollIntoView?.({ block: 'nearest' }); }, dispose() { camera.stop(); section.remove(); } };
 }

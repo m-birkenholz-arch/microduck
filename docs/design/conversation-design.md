@@ -228,7 +228,9 @@ and [browser SpeechRecognition](https://developer.mozilla.org/en-US/docs/Web/API
 ### Local laptop face recognition
 
 `face-local.mjs` runs an opt-in browser-only face detection/recognition experiment.
-No camera frames are sent through Realtime, the helper or Google. `Camera testen`
+Face recognition itself sends no camera frames through Realtime, the helper or
+Google. The separate opt-in Gemini snapshot feature below can send a requested
+frame through the helper to Google; Realtime receives only its text analysis. `Camera testen`
 opens controls, then an explicit camera-start click requests user-facing video
 640x480 with `audio: false`. Preview and bounding rectangles are mirrored together.
 There is no physical robot camera bridge or identity-driven movement command.
@@ -484,3 +486,48 @@ Body sway is unchanged. Listening, Stop, disabled head motion and manual takeove
 cancel a gesture; it is never replayed after an override. Tests cover split
 negation, ambiguity, response/audio ordering, duplicate and late events, motion
 axis/duration/bounds, independent body motion and cancellation.
+
+
+### Requested camera analysis with Google Gemini
+
+`vision.mjs` defines `analyze_camera` and the single-frame capture contract.
+The camera panel has a separate, non-persisted **Camerabeelden delen met Google**
+checkbox, default off and reset by camera stop, Stop all, hidden tab and page exit.
+Name sharing and image sharing are independent. After an explicit visual question
+or **Bekijk dit**, the tool captures one decoded frame from the already-running
+laptop video. It never starts the camera, samples in the background or archives
+images. Canvas capture shrinks the image to at most 960 pixels on its longest
+edge, reducing further as needed to a JPEG data URL <=240,000 characters; the
+canvas pixels are cleared immediately. Image analysis does not identify people.
+
+The client discovers `googleVision` through `/health`; an older helper keeps voice
+working but requires an update/restart for vision. The new tool appears alongside
+Google Search, memory and camera-status tools. A live session is reused by the
+button; an idle app starts a session. While a response is pending or playing,
+the button asks the user to wait or ask aloud (existing voice barge-in applies).
+The model is instructed to invoke analysis only for an explicit visual request.
+The frontend and tool handler enforce consent again before capture and after the
+response; they do not depend on the model to enforce the checkbox.
+
+`POST /vision` uses the same loopback Host/Origin protections as `/search`, a
+250,000-byte JSON-body limit, exact question/image schema, bounded question and
+JPEG/base64 checks. It shares the one-active-request and ten-requests-per-minute
+Google budget with search. `vision-google.mjs` calls Gemini generateContent with
+one inline JPEG and the question using the existing server-only Google key and
+model setting. It has no Google Search tool: results are labelled Gemini image
+analysis, not Lens results or sourced web search. Instructions treat image text
+as untrusted data and request concise Dutch answers. Provider errors are sanitized;
+thought parts, raw images and descriptors never enter the Realtime tool output.
+The analysis description is sent to OpenAI for the spoken answer. The app stores
+neither the frame nor analysis in localStorage or files; provider retention is
+not controlled by the app.
+
+Only one image call per completed response batch is accepted. Extra tool handlers
+receive the existing cancellation signal; barge-in and Stop abort vision requests
+and invalidate the batch. Revoking image sharing or stopping the camera aborts the
+pending browser request; disconnected HTTP responses abort the upstream call.
+Late results are discarded before display or tool output. Requests already sent
+to Google cannot be recalled. Successful tool results produce the existing single
+spoken response and retain voice settings, motion, face recognition and playback.
+
+Reference: [Gemini inline image inputs](https://ai.google.dev/gemini-api/docs/generate-content/image-understanding).

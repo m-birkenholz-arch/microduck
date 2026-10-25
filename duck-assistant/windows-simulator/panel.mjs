@@ -81,6 +81,8 @@ const conversation = new DuckConversation({
   companionStore: store,
   cameraStatus: () => facePanel?.camera.status() || { camera_active: false },
   onSpeechActivity(active) { facePanel?.camera.setSpeechActive(active); },
+  captureImage: () => facePanel.capture(),
+  onVisionResult(result) { if (result) notice(result.text); },
   onMemoryChanged() { renderMemories(); conversation.updatePersonalization(); },
   onStatus(message, active) {
     root.querySelector('#status').textContent = message;
@@ -225,6 +227,13 @@ $('#nature-photo').addEventListener('change', async event => {
 });
 facePanel = mountFacePanel({ container: root.querySelector('section'), storage, defaultName: store.preferences.userName,
   onContext() { conversation.updateCameraContext(); },
+  onView() {
+    if (conversation.responseActive || conversation.outputPlaying || conversation.searchTools?.pending.size) { notice('Duck is nog bezig. Wacht even, of stel je beeldvraag hardop om hem te onderbreken.'); return; }
+    const text = 'Gebruik analyze_camera om te beschrijven wat ik nu laat zien. Antwoord kort; is het een opgave, help met één begrijpelijke stap.';
+    if (!conversation.visionReady && conversation.controller) { notice('Werk de gesprekshulp bij en start die met Google ingeschakeld.'); return; }
+    if (conversation.channel?.readyState === 'open') conversation.ask(text);
+    else { arming++; wake.pause(); void conversation.start({ initialText: text }); }
+  },
   onActivity() { stop.disabled = !wake?.enabled && !conversation.controller && !facePanel?.camera.active; },
   onGreet() { arming++; wake.pause(); void conversation.start({ initialText: 'Gebruik get_camera_status voor de lokale camerastatus. Begroet me in één korte zin, met de mogelijke naam als die beschikbaar is. Zonder naam zeg je alleen “Hallo, fijn dat je er bent!” Vraag niet standaard om bevestiging en geef geen uitleg over herkenning.' }); },
 });

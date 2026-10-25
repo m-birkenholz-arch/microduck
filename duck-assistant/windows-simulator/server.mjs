@@ -1,5 +1,7 @@
 // Loopback-only SDP exchange and Google lookup; keys never enter the browser or Vite.
 import http from 'node:http';
+import { googleVision } from './vision-google.mjs';
+import { validVisionRequest } from './vision.mjs';
 import { googleSearch, DEFAULT_SEARCH_MODEL, GoogleSearchError } from './search-google.mjs';
 import { searchTool, searchInstructions } from './search-tools.mjs';
 import { readFileSync } from 'node:fs';
@@ -44,10 +46,10 @@ export function createConversationServer({
       return;
     }
     if (req.method === 'GET' && req.url === '/health') {
-      reply(200, JSON.stringify({ ready: Boolean(apiKey), model, googleSearch: Boolean(googleKey), searchVersion: 1, companionVersion: 1, instructions: profile.instructions + (googleKey ? searchInstructions : ''), tools: googleKey ? [searchTool] : [] }), 'application/json');
+      reply(200, JSON.stringify({ ready: Boolean(apiKey), model, googleSearch: Boolean(googleKey), googleVision: Boolean(googleKey), searchVersion: 1, companionVersion: 1, instructions: profile.instructions + (googleKey ? searchInstructions : ''), tools: googleKey ? [searchTool] : [] }), 'application/json');
       return;
     }
-    if (req.method !== 'POST' || !['/session', '/search'].includes(req.url)) {
+    if (req.method !== 'POST' || !['/session', '/search', '/vision'].includes(req.url)) {
       reply(404, 'Onbekend adres.');
       return;
     }
@@ -55,7 +57,8 @@ export function createConversationServer({
       reply(503, 'Start start.ps1 en vul daar je OpenAI API-key in.');
       return;
     }
-    if (req.url === '/search') {
+    if (['/search', '/vision'].includes(req.url)) {
+      const vision = req.url === '/vision';
       if (!googleKey) { reply(503, 'Google zoeken is uitgeschakeld. Start start.ps1 met een Google API-key.'); return; }
       if (req.headers['content-type']?.split(';')[0] !== 'application/json') { reply(415, 'JSON-zoekvraag verwacht.'); return; }
       const controller = new AbortController();
@@ -65,24 +68,25 @@ export function createConversationServer({
         const chunks = []; let bytes = 0;
         for await (const chunk of req) {
           bytes += chunk.length;
-          if (bytes > 8192) { reply(413, 'Zoekvraag te groot.'); return; }
+          if (bytes > (vision ? 250000 : 8192)) { reply(413, 'Zoekvraag te groot.'); return; }
           chunks.push(chunk);
         }
         let args;
         try { args = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { reply(400, 'Ongeldige JSON-zoekvraag.'); return; }
-        if (!args || typeof args.query !== 'string' || !args.query.trim() || args.query.length > 1000 || Object.keys(args).some(k => k !== 'query')) {
-          reply(400, 'Geef één concrete zoekvraag van maximaal 1000 tekens.'); return;
+        if (vision ? !validVisionRequest(args) : (!args || typeof args.query !== 'string' || !args.query.trim() || args.query.length > 1000 || Object.keys(args).some(k => k !== 'query'))) {
+          reply(400, vision ? 'Geef één JPEG-camerabeeld en een vraag van maximaal 1000 tekens.' : 'Geef één concrete zoekvraag van maximaal 1000 tekens.'); return;
         }
         const now = Date.now();
         while (searches.length && searches[0] < now - 60000) searches.shift();
         if (activeSearch || searches.length >= 10) { reply(429, 'Even wachten: er loopt al een zoekopdracht of de zoeklimiet is bereikt.'); return; }
         activeSearch = true; acquired = true; searches.push(now);
-        const result = await googleSearch(args.query.trim(), { apiKey: googleKey, model: googleModel, fetchImpl,
-          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(30000)]) });
+        const options = { apiKey: googleKey, model: googleModel, fetchImpl,
+          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(30000)]) };
+        const result = vision ? await googleVision(args.question.trim(), args.image, options) : await googleSearch(args.query.trim(), options);
         if (!res.destroyed) reply(200, JSON.stringify(result), 'application/json');
       } catch (error) {
-        if (!res.destroyed) reply(502, error.name === 'TimeoutError' ? 'Google zoeken duurde te lang. Probeer opnieuw.' :
-          error instanceof GoogleSearchError ? error.message : 'Google zoeken is niet bereikbaar of leverde ongeldige gegevens.');
+        if (!res.destroyed) reply(502, error.name === 'TimeoutError' ? 'Google antwoordde niet op tijd. Probeer opnieuw.' :
+          error instanceof GoogleSearchError ? error.message : 'Google is niet bereikbaar of leverde ongeldige gegevens.');
       } finally { if (acquired) activeSearch = false; }
       return;
     }

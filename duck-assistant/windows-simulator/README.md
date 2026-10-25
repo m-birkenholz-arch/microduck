@@ -190,7 +190,7 @@ De eerste installatie vereist `install.ps1 -FaceCamera` (eventueel samen met
 face-api.js 0.22.2-bestanden uit één upstream Git-commit, controleert SHA-256 en
 bewaart ook de licentie. De bestanden worden onder `app/public/duck-face` lokaal
 geserveerd. Browserherkenning doet geen modeldownloads naar een externe CDN en
-stuurt geen camerabeelden naar een cloudservice. Er is geen extra API-key nodig
+stuurt voor gezichtsherkenning geen camerabeelden naar een cloudservice. De aparte optie hieronder kan op verzoek één beeld met Google delen. Er is geen extra API-key nodig
 voor de camerafunctie. Ontbreken de modellen, dan geeft Camera starten een melding
 om met `-FaceCamera` te installeren. Latere gewone updates behouden de modellen.
 
@@ -201,8 +201,7 @@ Zo leer je je gezicht aan:
 3. Vul je naam in en klik **Leer mijn gezicht**. Er wordt een profiel lokaal
    bewaard met je naam en drie reeksen getallen, geen foto's of video.
 4. Wacht op **Lijkt op [naam] (herkenningsproef)**. Onbekende, onduidelijke of
-   te sterk op elkaar lijkende gezichten krijgen geen naam. Bij meerdere gezichten
-   wordt geen naam gekozen en kun je niet aanleren.
+   te sterk op elkaar lijkende gezichten krijgen geen naam. Meerdere aangeleerde gezichten kunnen tegelijk worden herkend; aanleren kan alleen met één gezicht.
 
 Er passen maximaal vijf profielen in **Mijn gezichtsprofielen**. Leer alleen
 jezelf aan of iemand die hiervoor toestemming geeft. Namen en numerieke
@@ -214,11 +213,11 @@ verwijderen stopt ook de cameraloop om oude herkenning direct te wissen.
 Wil je dat moeder-eend je herkent tijdens het praten? Zet bewust **Duck mag de
 herkende naam gebruiken** aan. Vraag dan **“Herken je mij?”**, of klik **Laat Duck
 mij begroeten** om een nieuw gesprek te starten. De lokale statusfunctie geeft
-alleen of de camera aanstaat, het aantal gezichten en na deze toestemming een
-mogelijke naam terug aan OpenAI. Zij ontvangt geen videobeeld, foto of descriptor.
+of de camera aanstaat, het aantal gezichten en na deze toestemming mogelijke
+namen en een mogelijke spreker terug aan OpenAI. Zij ontvangt geen videobeeld, foto of descriptor.
 Zonder dit vinkje blijven namen lokaal; aantallen en camera-aan/uit kunnen wel
-worden uitgelezen. Er worden geen spontane herkenningsberichten of begroetingen
-gestuurd. Een naam die al besproken is kan in het lopende gesprek blijven staan;
+worden uitgelezen. De context wordt tijdens het gesprek bijgewerkt; Duck kan een herkende naam
+gebruiken zonder telkens om bevestiging te vragen. Een naam die al besproken is kan in het lopende gesprek blijven staan;
 uitzetten/wissen verwijdert geen historische providergegevens.
 
 **Camera stoppen** sluit alleen video af. **Stop alles**, tab verbergen, herladen
@@ -257,6 +256,28 @@ bepaald. De fysieke robotcamera en gezichtsafhankelijke motorreacties zijn nog
 niet aangesloten. Test nu eerst je laptopcamera in Chrome of Edge op localhost.
 Als openen niet lukt: controleer cameratoestemming in de browser en Windows en
 sluit eventueel andere camera-apps.
+
+### Laat Duck bekijken wat je laat zien
+
+Dit gebruikt **Google Gemini beeldanalyse**, via dezelfde Google AI Studio-key als
+Google Search. Het is geen rechtstreekse Google Lens-koppeling. Werk de installer
+bij en start de gesprekshulp opnieuw met `-GoogleSearch -RestartHelper`.
+
+1. Open **Camera testen** en klik **Camera starten**.
+2. Vink **Camerabeelden delen met Google** aan. Deze toestemming staat los van
+   naamdelen en gaat uit wanneer je de camera stopt.
+3. Klik **Bekijk dit**, of start een gesprek en zeg bijvoorbeeld **“Wat heb ik
+   vast?”**, **“Welke plant is dit?”** of **“Lees deze opgave en help me.”**
+4. Houd het voorwerp of de tekst duidelijk in beeld. Duck antwoordt kort. Tijdens
+   een antwoord kun je hardop een nieuwe vraag stellen om hem te onderbreken.
+
+Alleen op zo'n verzoek wordt één verkleind camerabeeld via de laptop naar Google
+verstuurd. De beschrijving gaat naar OpenAI voor het gesproken antwoord. De app
+bewaart geen beelden of analyses; er is geen doorlopende upload. API-gebruik kan
+geld kosten. Met het vinkje uit worden geen nieuwe beelden gedeeld; een lopende
+analyse wordt afgebroken. Herkenning kan zich vergissen: laat onduidelijke tekst
+of kleine details dichterbij zien. Voor gezichtsidentiteit blijven de lokale
+gezichtsprofielen gelden; Gemini wordt daarvoor niet gebruikt.
 
 ## Google Search inschakelen
 
@@ -328,7 +349,7 @@ API-tegoed en modeltoegang hebben.
 Vanuit de root van de robotrepository:
 
 ```sh
-node --test duck-assistant/windows-simulator/conversation.test.mjs duck-assistant/windows-simulator/search.test.mjs duck-assistant/windows-simulator/companion.test.mjs duck-assistant/windows-simulator/face.test.mjs
+node --test duck-assistant/windows-simulator/conversation.test.mjs duck-assistant/windows-simulator/search.test.mjs duck-assistant/windows-simulator/companion.test.mjs duck-assistant/windows-simulator/face.test.mjs duck-assistant/windows-simulator/vision.test.mjs
 node duck-assistant/windows-simulator/install.mjs /pad/naar/microduck-simulator
 ```
 

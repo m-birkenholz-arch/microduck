@@ -780,3 +780,30 @@ test('live camera context reaches session instructions, updates on changes and s
   assert.match(f.channel.messages.at(-1).session.instructions, /Gebruik geen eerdere cameranaam/);
   f.duck.stop(); assert.equal(activities.at(-1), false);
 });
+
+test('Google vision is discovered at startup and a spoken visual request returns text evidence through the existing tool flow', async t => {
+  let captures = 0, uploads = 0;
+  const image = 'data:image/jpeg;base64,/9j/2Q==';
+  const f = browserFixture({ companionStore: { preferences: {}, memories: [] },
+    cameraStatus: () => ({ camera_active: true, image_sharing: true, name_sharing: false }),
+    captureImage: () => { captures++; return image; },
+    fetchImpl: async (url, init) => {
+      if (url.endsWith('/health')) return Response.json({ ready: true, companionVersion: 1, instructions: profile.instructions, googleVision: true, tools: [] });
+      if (url.endsWith('/vision')) { uploads++; assert.equal(JSON.parse(init.body).image, image); return Response.json({ text: 'Een appel.', provider: 'Google Gemini beeldanalyse' }); }
+      return new Response('v=0\r\nanswer');
+    },
+  });
+  t.after(() => f.duck.stop()); await f.duck.start(); f.channel.onopen();
+  assert.ok(f.channel.messages[0].session.tools.some(tool => tool.name === 'analyze_camera'));
+  assert.match(f.channel.messages[0].session.instructions, /Bij een beeldvraag heeft analyze_camera voorrang/);
+  assert.equal(captures, 0); assert.equal(uploads, 0);
+  f.channel.onmessage({ data: JSON.stringify({ type: 'response.done', response: { id: 'visual', status: 'completed', output: [
+    { type: 'function_call', name: 'analyze_camera', call_id: 'view', arguments: '{"question":"Wat heb ik vast?"}' },
+  ] } }) });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(captures, 1); assert.equal(uploads, 1);
+  const result = JSON.parse(f.channel.messages.find(event => event.item?.call_id === 'view').item.output);
+  assert.equal(result.result.text, 'Een appel.');
+  assert.ok(!JSON.stringify(f.channel.messages).includes('base64'));
+  assert.equal(f.channel.messages.at(-1).type, 'response.create');
+});

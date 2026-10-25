@@ -92,7 +92,7 @@ export class LocalFaceCamera {
     onState = () => {}, onResult = () => {}, schedule = (callback, delay) => globalThis.setTimeout(callback, delay),
     unschedule = timer => globalThis.clearTimeout(timer), now = Date.now }) {
     Object.assign(this, { video, gallery, mediaDevices, makeEngine, onState, onResult, schedule, unschedule, now });
-    this.active = false; this.generation = 0; this.shareName = false; this.recognitionError = ''; this.trackCleanup = []; this.reset();
+    this.active = false; this.generation = 0; this.shareName = false; this.shareImage = false; this.recognitionError = ''; this.trackCleanup = []; this.reset();
   }
   reset() { this.recent = []; this.match = null; this.candidate = null; this.streak = 0; this.faceCount = 0; this.lastAt = null; this.people = []; this.tracks = new Map(); this.speaking = false; this.speaker = null; this.speakerAt = null; }
   async start() {
@@ -197,17 +197,17 @@ export class LocalFaceCamera {
     const result = this.gallery.add(name, this.recent); this.reset(); return result;
   }
   status() {
-    if (!this.active) return { camera_active: false, message: 'De laptopcamera staat uit.' };
+    if (!this.active) return { camera_active: false, image_sharing: false, message: 'De laptopcamera staat uit.' };
     const fresh = typeof this.lastAt === 'number' && this.now() - this.lastAt <= 5000;
-    return { camera_active: true, face_count: fresh ? this.faceCount : null, name_sharing: this.shareName, recognition_available: !this.recognitionError && fresh,
+    return { camera_active: true, image_sharing: this.shareImage, face_count: fresh ? this.faceCount : null, name_sharing: this.shareName, recognition_available: !this.recognitionError && fresh,
       possibly_recognized_name: this.shareName && fresh ? this.match?.name || null : null,
       recognized_people: this.shareName && fresh ? this.people.map(p => ({ name: p.name })) : [],
       possible_speaker_name: this.shareName && fresh && this.speakerAt !== null && this.now() - this.speakerAt < 15000 ? this.speaker?.name || null : null,
       speaker_method: 'experimental_mouth_motion_during_detected_speech',
-      experimental: true, message: this.recognitionError ? 'De herkenning is gepauzeerd; er is geen naam beschikbaar.' : !this.shareName ? 'Naam delen staat uit; beelden en gezichtsprofielen blijven lokaal.' : 'Lokale herkenning actief.' };
+      experimental: true, message: this.recognitionError ? 'De herkenning is gepauzeerd; er is geen naam beschikbaar.' : !this.shareName ? 'Naam delen staat uit; gezichtsprofielen blijven lokaal.' : 'Lokale herkenning actief.' };
   }
   stop(reason = 'Camera uit — geen beelden worden verwerkt.') {
-    this.generation++; this.active = false; this.shareName = false; this.recognitionError = ''; this.engine = null;
+    this.generation++; this.active = false; this.shareName = false; this.shareImage = false; this.recognitionError = ''; this.engine = null;
     for (const remove of this.trackCleanup) remove(); this.trackCleanup = [];
     if (this.timer) this.unschedule(this.timer); this.timer = null;
     this.stream?.getTracks().forEach(t => t.stop()); this.stream = null;

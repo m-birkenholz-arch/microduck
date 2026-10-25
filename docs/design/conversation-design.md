@@ -122,9 +122,9 @@ hidden input and restores its previous process environment on exit.
 
 The browser session profile preserves the Rust assistant's model, exact Dutch
 instructions, voice and VAD settings; a test guards instruction drift. Both use
-`verse` with Dutch delivery instructions for a light, slightly higher, warm and
-playful duck character. This is prompted delivery, not a fixed pitch transform;
-the perceived voice needs listening validation. The helper reads the profile at
+`shimmer` with Dutch delivery instructions for a light, slightly higher, warm and
+playful duck character. The browser additionally applies the local voice transform
+described below; the Rust robot currently uses the carrier without this DSP. The helper reads the profile at
 startup, so profile changes require a helper restart and a new conversation. WebRTC
 negotiates its media format, so this mode does not exercise the robot's 24 kHz
 WebSocket PCM conversion, ALSA capture, Unix socket framing or RobotAudio playback.
@@ -139,6 +139,29 @@ The installer composes this opening with the simulator's existing quack/gamepad
 jaw opening. Stop, a closed session,
 page exit or a startup failure closes the peer connection and microphone tracks,
 including tracks granted after Stop was pressed during the permission dialog.
+
+### Browser duck voice
+
+The received WebRTC stream is routed through a mono `AudioWorkletNode`, a mute
+gain, the existing jaw/gesture analyser and the AudioContext destination. The
+HTML audio sink has volume zero, so the unprocessed carrier is never doubled
+with the duck voice. Two Hann-crossfaded variable-delay heads resample short
+windows, raising pitch and formants together while producing exactly one output
+sample per incoming sample. Default +5 semitones, adjustable 0..9 live; zero
+bypasses the shifter. Delay spans 8..68 ms. This is an initial cartoon effect,
+not formant-preserving or studio-quality speech processing; listening validation
+is still needed for intelligibility, timbre and possible granular artifacts.
+
+Barge-in and output-buffer clearing mute the graph immediately and reset the
+short delay buffer. Stop disconnects the graph, closes the worklet port and
+AudioContext, and releases the microphone as before. The meter sees transformed
+audio, preserving jaw motion and audible-answer gesture gating. Installers ship
+both voice modules; Vite bundles the worklet URL as a module asset (inlined for small modules).
+The data-channel open handler sets `shimmer` before output audio, allowing this
+browser update to work with a helper still holding the previous profile. No extra
+provider call, package dependency, changed speech tempo or response-length queue
+is introduced. This browser DSP is not yet the seed-derived robot personality
+transform from M4 and is not applied to RobotAudio PCM playback.
 
 ### Existing expressions connected to speech
 

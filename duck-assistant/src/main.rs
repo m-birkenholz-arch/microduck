@@ -74,7 +74,7 @@ async fn main() -> Result<()> {
                 },
                 "output": {
                     "format": { "type": "audio/pcm", "rate": audio::OPENAI_RATE },
-                    "voice": "verse"
+                    "voice": "shimmer"
                 }
             }
         }

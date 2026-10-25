@@ -7,6 +7,8 @@ import path from 'node:path';
 import os from 'node:os';
 import vm from 'node:vm';
 import { createConversationServer, profile } from './server.mjs';
+import { DuckPitchShifter } from './voice-worklet.mjs';
+import { createDuckVoice } from './voice.mjs';
 import { DuckConversation } from './client.mjs';
 import { install } from './install.mjs';
 import { ConversationMotion, headExpression } from './motion.mjs';
@@ -36,7 +38,7 @@ test('profile preserves the robot Dutch instructions, model, voice and VAD', asy
   const instructions = [...block.matchAll(/"(?:[^"\\]|\\.)*"/g)].map(x => JSON.parse(x[0])).join('');
   assert.equal(profile.instructions, instructions);
   assert.ok(rust.includes(`const DEFAULT_MODEL: &str = "${profile.model}"`));
-  assert.equal(profile.audio.output.voice, 'verse');
+  assert.equal(profile.audio.output.voice, 'shimmer');
   assert.ok(rust.includes(`"voice": "${profile.audio.output.voice}"`));
   assert.equal(profile.audio.input.turn_detection.interrupt_response, true);
   assert.equal(profile.audio.input.turn_detection.create_response, true);
@@ -468,22 +470,28 @@ test('installer refuses an unknown simulator version before editing files', asyn
 function browserFixture(extra = {}) {
   const track = { stopped: false, stop() { this.stopped = true; } };
   const stream = { getTracks: () => [track], getAudioTracks: () => [track] };
-  const channel = { readyState: 'open', close() { this.closed = true; } };
+  const channel = { readyState: 'open', messages: [], send(value) { this.messages.push(JSON.parse(value)); }, close() { this.closed = true; } };
   const peer = {
     addTrack() {}, createDataChannel: () => channel,
     createOffer: async () => ({ sdp: offer }), setLocalDescription: async () => {},
     setRemoteDescription: async () => {}, close() { this.closed = true; },
   };
   const audio = { muted: false, pause() {}, play: async () => {} };
-  const context = { resume: async () => {}, close: async () => {} };
+  const node = () => ({ connections: [], connect(target) { this.connections.push(target); }, disconnect() { this.disconnected = true; } });
+  const source = node();
+  const analyser = { ...node(), fftSize: 256, getFloatTimeDomainData(samples) { samples.fill(0.1); } };
+  const context = { resume: async () => {}, close: async () => {}, destination: {},
+    createMediaStreamSource: () => source, createAnalyser: () => analyser };
+  const voice = { input: node(), output: node(), muted: true,
+    setMuted(value) { this.muted = value; }, setPitch(value) { this.pitch = value; }, close() { this.closed = true; } };
   const states = [];
   const duck = new DuckConversation({
     mediaDevices: { getUserMedia: async () => stream }, makePeer: () => peer,
-    makeAudio: () => audio, makeContext: () => context,
+    makeAudio: () => audio, makeContext: () => context, makeVoice: async () => voice,
     fetchImpl: async url => new Response(url.endsWith('/health') ? '{"ready":true}' : 'v=0\r\nanswer'),
     onStatus: (text, active) => states.push({ text, active }), ...extra,
   });
-  return { duck, track, peer, channel, audio, states, stream };
+  return { duck, track, peer, channel, audio, states, stream, voice, source, analyser, context };
 }
 
 test('barge-in immediately mutes playback, the next answer unmutes it, Stop releases the mic', async () => {
@@ -491,9 +499,11 @@ test('barge-in immediately mutes playback, the next answer unmutes it, Stop rele
   await f.duck.start();
   f.duck.handleEvent({ type: 'input_audio_buffer.speech_started' });
   assert.equal(f.audio.muted, true);
+  assert.equal(f.voice.muted, true);
   assert.equal(f.track.stopped, false); // Listening continues during interruption.
   f.duck.handleEvent({ type: 'output_audio_buffer.started' });
   assert.equal(f.audio.muted, false);
+  assert.equal(f.voice.muted, false);
   f.duck.stop();
   assert.ok(f.track.stopped && f.peer.closed && f.channel.closed);
 });
@@ -533,4 +543,120 @@ test('failed SDP exchange releases audio capture and exposes the useful error', 
   await f.duck.start();
   assert.ok(f.track.stopped && f.peer.closed);
   assert.deepEqual(f.states.at(-1), { text: 'Controleer API-tegoed', active: false });
+});
+
+
+test('pitch shift raises the carrier without changing stream length at browser sample rates', () => {
+  for (const rate of [24000, 44100, 48000]) {
+    const shifter = new DuckPitchShifter(rate, 5);
+    const input = Float32Array.from({ length: rate }, (_, n) => 0.5 * Math.sin(2 * Math.PI * 220 * n / rate));
+    const output = new Float32Array(rate);
+    for (let offset = 0; offset < rate; offset += 128) {
+      shifter.process(input.subarray(offset, offset + 128), output.subarray(offset, offset + 128));
+    }
+    let best = 0, peak = 0;
+    // Crossfade sidebands can move the peak a few Hz; detect the actual spectrum,
+    // rather than just testing that the configured pitch number changed.
+    for (let hz = 200; hz <= 350; hz++) {
+      let re = 0, im = 0;
+      for (let n = Math.floor(rate / 5); n < rate; n++) {
+        re += output[n] * Math.cos(2 * Math.PI * hz * n / rate);
+        im += output[n] * Math.sin(2 * Math.PI * hz * n / rate);
+      }
+      const power = re * re + im * im;
+      if (power > best) { best = power; peak = hz; }
+    }
+    assert.ok(Math.abs(peak - 220 * 2 ** (5 / 12)) < 8, `rate ${rate}, measured peak ${peak}`);
+    assert.ok(output.every(x => Number.isFinite(x) && Math.abs(x) <= 0.501));
+    assert.ok(best > rate, 'audio is present');
+    shifter.reset();
+    const silence = new Float32Array(rate / 10);
+    shifter.process(undefined, silence);
+    assert.ok(silence.every(x => x === 0), 'interrupted audio cannot leak from the delay');
+  }
+});
+
+test('zero pitch bypasses, extreme controls clamp and sustained DC does not amplify', () => {
+  const shifter = new DuckPitchShifter(48000, 0);
+  const input = Float32Array.from({ length: 10000 }, (_, n) => Math.sin(n));
+  const output = new Float32Array(input.length);
+  shifter.process(input, output);
+  assert.deepEqual(output, input);
+  shifter.setPitch(100); assert.equal(shifter.semitones, 9);
+  shifter.setPitch(-10); assert.equal(shifter.semitones, 0);
+  shifter.setPitch(NaN); assert.equal(shifter.semitones, 5);
+  input.fill(0.5);
+  shifter.process(input, output);
+  assert.ok(output.slice(4000).every(x => Math.abs(x - 0.5) < 1e-6));
+});
+
+test('only processed audio reaches the speaker, live pitch control and barge-in keep working', async t => {
+  const f = browserFixture();
+  t.after(() => f.duck.stop());
+  await f.duck.start();
+  f.channel.onopen();
+  assert.equal(f.channel.messages[0].session.audio.output.voice, profile.audio.output.voice);
+  await f.peer.ontrack({ streams: [f.stream] });
+  assert.equal(f.audio.volume, 0, 'raw adult voice must never play alongside the duck');
+  assert.deepEqual(f.source.connections, [f.voice.input]);
+  assert.deepEqual(f.voice.output.connections, [f.analyser]);
+  assert.deepEqual(f.analyser.connections, [f.context.destination]);
+  f.duck.setVoicePitch(7);
+  assert.equal(f.voice.pitch, 7);
+  f.duck.handleEvent({ type: 'output_audio_buffer.started' });
+  assert.equal(f.voice.muted, false);
+  f.duck.handleEvent({ type: 'input_audio_buffer.speech_started' });
+  assert.equal(f.voice.muted, true);
+  f.duck.handleEvent({ type: 'output_audio_buffer.started' });
+  f.duck.handleEvent({ type: 'output_audio_buffer.cleared' });
+  assert.equal(f.voice.muted, true);
+  f.duck.stop();
+  assert.ok(f.voice.closed && f.source.disconnected && f.analyser.disconnected);
+});
+
+test('worklet output gate mutes immediately, clears old speech and closes resources', async t => {
+  const messages = [];
+  let worklet;
+  const previous = globalThis.AudioWorkletNode;
+  t.after(() => { if (previous) globalThis.AudioWorkletNode = previous; else delete globalThis.AudioWorkletNode; });
+  globalThis.AudioWorkletNode = class {
+    constructor(context, name, options) {
+      worklet = this; this.options = options;
+      this.port = { postMessage: message => messages.push(message), close: () => { this.closed = true; } };
+    }
+    connect() {} disconnect() { this.disconnected = true; }
+  };
+  const changes = [];
+  const gain = { gain: { value: 1, cancelScheduledValues() {}, setValueAtTime: value => changes.push(value) }, disconnect() {} };
+  const context = { currentTime: 1, audioWorklet: { addModule: async url => assert.ok(url.pathname.endsWith('voice-worklet.mjs')) }, createGain: () => gain };
+  const voice = await createDuckVoice(context, 6);
+  assert.equal(gain.gain.value, 0);
+  assert.equal(worklet.options.processorOptions.semitones, 6);
+  voice.setMuted(false); voice.setMuted(true); voice.setPitch(8);
+  assert.deepEqual(changes, [1, 0]);
+  assert.deepEqual(messages, [{ type: 'reset' }, { type: 'pitch', value: 8 }]);
+  voice.close();
+  assert.ok(worklet.closed && worklet.disconnected);
+});
+
+
+test('registered audio processor processes missing input safely and accepts reset and pitch messages', async () => {
+  let Processor;
+  const scope = {
+    Float32Array, Math, Number, sampleRate: 48000,
+    AudioWorkletProcessor: class { constructor() { this.port = {}; } },
+    registerProcessor(name, value) { assert.equal(name, 'duck-voice'); Processor = value; },
+  };
+  const source = await readFile(new URL('./voice-worklet.mjs', import.meta.url), 'utf8');
+  vm.runInNewContext(source.replace('export class', 'class'), scope);
+  const processor = new Processor({ processorOptions: { semitones: 0 } });
+  const input = new Float32Array(128).fill(0.2);
+  const output = new Float32Array(128);
+  assert.equal(processor.process([[input]], [[output]]), true);
+  assert.deepEqual(output, input);
+  processor.port.onmessage({ data: { type: 'pitch', value: 7 } });
+  assert.equal(processor.shifter.semitones, 7);
+  processor.port.onmessage({ data: { type: 'reset' } });
+  processor.process([], [[output]]);
+  assert.ok(output.every(x => x === 0));
 });

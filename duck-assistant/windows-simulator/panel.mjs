@@ -27,6 +27,9 @@ root.innerHTML = `
  <p class="hint"><label><input id="body-motion" type="checkbox" checked> Lichaam beweegt mee</label></p>
  <p class="hint"><label for="strength">Sterkte beweging: <output id="strength-value">3×</output></label>
  <input id="strength" type="range" min="1" max="4" step="0.5" value="3" aria-label="Sterkte lichaamsreacties"></p>
+ <p class="hint"><label for="voice-pitch">Eendenstem: <output id="voice-pitch-value">5</output></label>
+ <input id="voice-pitch" type="range" min="0" max="9" step="1" value="5" aria-label="Hoe hoger, hoe kleiner de eendenstem">
+ 0 = basisstem · 9 = extra klein en hoog</p>
  <p id="text"></p>
  <p class="hint">Je microfoon blijft tijdens het gesprek open. Klik op Stop om af te sluiten. OpenAI API-gebruik kost apart geld.</p>
 </section>`;
@@ -58,6 +61,10 @@ root.querySelector('#body-motion').addEventListener('change', event => {
 root.querySelector('#strength').addEventListener('input', event => {
   conversationMotion.setStrength(Number(event.target.value));
   root.querySelector('#strength-value').textContent = `${conversationMotion.strength}×`;
+});
+root.querySelector('#voice-pitch').addEventListener('input', event => {
+  conversation.setVoicePitch(Number(event.target.value));
+  root.querySelector('#voice-pitch-value').textContent = conversation.voicePitch;
 });
 // Keep UI events away from the simulator's keyboard/gamepad gesture handlers.
 for (const type of ['keydown', 'keyup', 'pointerdown', 'pointerup', 'click']) {

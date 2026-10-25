@@ -74,10 +74,16 @@ antwoord te schudden. De lichaamsbeweging en spraak blijven daarbij doorlopen.
 De microfoon blijft open zolang het gesprek actief is. Een nieuw gestart gesprek
 begint met een lege sessie. Deze versie heeft geen weer-, zoek- of andere tools.
 
-De stem gebruikt `verse`, met instructies voor een lichte, iets hogere, warme en
-speelse eendenstem. Hoe dit klinkt moet je beluisteren; de toonhoogte is geen vaste
-audio-instelling. Na een update van `session.json` moet je de hulpserver opnieuw
-starten en een nieuw gesprek beginnen.
+De basisstem is `shimmer`. In de browser maakt een lokale stemvervorming de
+toonhoogte en klank hoger zonder het spreektempo te verhogen. **Eendenstem**
+staat standaard op 5 halve tonen hoger; met de schuif kies je direct tussen
+0 (basisstem) en 9 (extra klein en hoog), ook tijdens een gesprek. De instelling
+blijft gelden tot de pagina opnieuw geladen wordt. De verwerking voegt maximaal
+ongeveer 68 ms vertraging toe en kan een licht korrelige klank geven. Test op je
+laptop wat schattig én verstaanbaar klinkt. Er worden geen extra API-aanroepen gedaan.
+Na een update van `session.json` moet je de hulpserver opnieuw starten en een nieuw
+gesprek beginnen. De lokale stemvervorming geldt voor de browsersimulator; op de
+fysieke robot wordt deze nog niet toegepast.
 
 ## Later opnieuw starten
 

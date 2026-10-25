@@ -3,7 +3,7 @@ import { createFaceEngine, loadFaceModels } from './face-engine.mjs';
 export const FACE_STORAGE_KEY = 'microduck.faces.v1';
 export const FACE_ENGINE = 'face-api-0.22.2';
 export const cameraStatusTool = { type: 'function', name: 'get_camera_status',
-  description: 'Lees de lokale laptopcameratest als de gebruiker vraagt of je een gezicht ziet of iemand herkent. Start geen camera. Een mogelijke naam is onzekere lokale herkenning, geen bewijs van identiteit. Alleen na inschakelen van naamdelen komt een naam mee. Beeld en gezichtsprofielen zijn niet beschikbaar.',
+  description: 'Lees de actuele lokale cameracontext voor je antwoord wanneer naamdelen aanstaat: herkende personen en een mogelijke spreker op basis van mondbeweging tijdens spraak. Start geen camera. Een mogelijke naam is onzekere lokale herkenning, geen bewijs van identiteit. Alleen na inschakelen van naamdelen komt een naam mee. Beeld en gezichtsprofielen zijn niet beschikbaar.',
   parameters: { type: 'object', properties: {}, additionalProperties: false } };
 export function descriptor(value) {
   if (!value || value.length !== 128) return null;
@@ -57,6 +57,15 @@ export class FaceGallery {
   }
 }
 
+// Inner-lip separation divided by mouth width cancels camera distance and translation.
+export function mouthOpening(face) {
+  const points = face.landmarks?.getMouth?.();
+  if (!points || points.length !== 20) return null;
+  const gap = (a, b) => Math.hypot(points[a].x - points[b].x, points[a].y - points[b].y);
+  const width = gap(0, 6), value = (gap(13, 19) + gap(14, 18) + gap(15, 17)) / (3 * width);
+  return width > 5 && Number.isFinite(value) ? value : null;
+}
+
 let enginePromise;
 export function loadFaceEngine() {
   if (!enginePromise) enginePromise = (async () => {
@@ -85,7 +94,7 @@ export class LocalFaceCamera {
     Object.assign(this, { video, gallery, mediaDevices, makeEngine, onState, onResult, schedule, unschedule, now });
     this.active = false; this.generation = 0; this.shareName = false; this.recognitionError = ''; this.trackCleanup = []; this.reset();
   }
-  reset() { this.recent = []; this.match = null; this.candidate = null; this.streak = 0; this.faceCount = 0; this.lastAt = null; }
+  reset() { this.recent = []; this.match = null; this.candidate = null; this.streak = 0; this.faceCount = 0; this.lastAt = null; this.people = []; this.tracks = new Map(); this.speaking = false; this.speaker = null; this.speakerAt = null; }
   async start() {
     this.stop(); const generation = this.generation; this.active = true;
     this.onState('Lokale gezichtsmodellen laden…');
@@ -121,6 +130,23 @@ export class LocalFaceCamera {
       if (generation !== this.generation) return;
       if (engine.backend === 'cpu' && this.reportedBackend !== 'cpu') { this.reportedBackend = 'cpu'; this.onState('Camera aan — overgeschakeld naar lokale CPU-herkenning (kan trager zijn).'); }
       this.lastAt = this.now(); this.faceCount = faces.length; this.match = null;
+      const previous = this.tracks; this.tracks = new Map(); this.people = [];
+      const observations = faces.map(face => {
+        const valid = descriptor(face.descriptor) && face.detection.score >= 0.8 && face.detection.box.width >= 100 && face.detection.box.height >= 100;
+        return { face, match: valid ? this.gallery.match(face.descriptor) : null };
+      });
+      for (const { face, match } of observations) {
+        // Duplicate matches in one frame are ambiguous, never two copies of one person.
+        if (!match || observations.filter(o => o.match?.id === match.id).length !== 1) continue;
+        const old = previous.get(match.id), opening = mouthOpening(face);
+        const history = this.speaking ? [...(old?.history || []), { value: opening, at: this.lastAt }]
+          .filter(p => p.value !== null && this.lastAt - p.at <= 2500).slice(-12) : [];
+        const track = { ...match, streak: (old?.streak || 0) + 1, history };
+        this.tracks.set(match.id, track);
+        if (track.streak >= 3) this.people.push({ id: match.id, name: match.name });
+      }
+      if (this.speaking) this.updateSpeaker();
+      else if (this.speaker && !this.people.some(p => p.id === this.speaker.id)) this.speaker = null;
       const face = faces.length === 1 ? faces[0] : null;
       const sample = face && descriptor(face.descriptor);
       const quality = sample && face.detection.score >= 0.8 && face.detection.box.width >= 100 && face.detection.box.height >= 100;
@@ -132,10 +158,10 @@ export class LocalFaceCamera {
         if (this.streak >= 3) this.match = match;
       } else { this.recent = []; this.streak = 0; this.candidate = null; }
       this.onResult({ faces, match: this.match, learnReady: this.recent.length === 3,
-        message: !faces.length ? 'Geen gezicht in beeld.' : faces.length > 1 ? 'Meerdere gezichten — ga alleen voor de camera zitten.' :
+        people: this.people, speaker: this.speaker, message: !faces.length ? 'Geen gezicht in beeld.' : faces.length > 1 ? `Gezichten: ${faces.length}. Herkend: ${this.people.map(p => p.name).join(', ') || 'nog niemand'}. Aanleren kan alleen met één gezicht.` :
           !quality ? 'Kom iets dichterbij, kijk recht vooruit en zorg voor goed licht.' : this.match ? `Lijkt op ${this.match.name} (herkenningsproef).` :
           this.candidate ? 'Mogelijke herkenning controleren…' : 'Gezicht gezien, nog niet herkend.' });
-      if (generation === this.generation && this.active) this.timer = this.schedule(() => { this.timer = null; void this.detect(engine, generation); }, 750);
+      if (generation === this.generation && this.active) this.timer = this.schedule(() => { this.timer = null; void this.detect(engine, generation); }, 250);
     } catch (error) {
       if (generation === this.generation) {
         this.reset();
@@ -144,6 +170,21 @@ export class LocalFaceCamera {
         this.onState(`Camera blijft aan. Herkenning gepauzeerd: ${this.recognitionError}. Klik op Herkenning opnieuw proberen.`);
       }
     }
+  }
+  updateSpeaker() {
+    const moving = [...this.tracks.values()].filter(track => {
+      const h = track.history;
+      if (track.streak < 3 || h.length < 3 || h.at(-1).at - h[0].at < 400) return false;
+      const changes = h.slice(1).filter((p, i) => Math.abs(p.value - h[i].value) > 0.025).length;
+      return changes >= 2 && Math.max(...h.map(p => p.value)) - Math.min(...h.map(p => p.value)) > 0.06;
+    });
+    // Unknown faces could be speaking too. Withhold attribution rather than guessing.
+    this.speaker = moving.length === 1 && this.people.length === this.faceCount ? { id: moving[0].id, name: moving[0].name } : null;
+    this.speakerAt = this.now();
+  }
+  setSpeechActive(active) {
+    if (active) { this.speaker = null; this.speakerAt = null; for (const track of this.tracks.values()) track.history = []; }
+    this.speaking = Boolean(active && this.active);
   }
   async retry() {
     if (!this.active || !this.engine || !this.recognitionError) return;
@@ -160,6 +201,9 @@ export class LocalFaceCamera {
     const fresh = typeof this.lastAt === 'number' && this.now() - this.lastAt <= 5000;
     return { camera_active: true, face_count: fresh ? this.faceCount : null, name_sharing: this.shareName, recognition_available: !this.recognitionError && fresh,
       possibly_recognized_name: this.shareName && fresh ? this.match?.name || null : null,
+      recognized_people: this.shareName && fresh ? this.people.map(p => ({ name: p.name })) : [],
+      possible_speaker_name: this.shareName && fresh && this.speakerAt !== null && this.now() - this.speakerAt < 15000 ? this.speaker?.name || null : null,
+      speaker_method: 'experimental_mouth_motion_during_detected_speech',
       experimental: true, message: this.recognitionError ? 'De herkenning is gepauzeerd; er is geen naam beschikbaar.' : !this.shareName ? 'Naam delen staat uit; beelden en gezichtsprofielen blijven lokaal.' : 'Lokale, onzekere herkenning. Geen identiteitsbewijs.' };
   }
   stop(reason = 'Camera uit — geen beelden worden verwerkt.') {

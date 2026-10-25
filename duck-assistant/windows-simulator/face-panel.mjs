@@ -13,7 +13,7 @@ export function drawFaceOverlay(canvas, video, faces, match) {
   } catch { canvas.hidden = true; return false; } // A rectangle must never stop video or recognition.
 }
 
-export function mountFacePanel({ container, storage, defaultName = '', onActivity = () => {}, onGreet = () => {}, cameraOptions = {} }) {
+export function mountFacePanel({ container, storage, defaultName = '', onActivity = () => {}, onGreet = () => {}, onContext = () => {}, cameraOptions = {} }) {
   const section = document.createElement('details');
   section.id = 'face-test';
   section.innerHTML = `
@@ -31,7 +31,7 @@ export function mountFacePanel({ container, storage, defaultName = '', onActivit
     <p class="hint">Houd één gezicht duidelijk in beeld tot Aanleren beschikbaar is. Deze knop bewaart drie numerieke gezichtsmetingen en je naam in deze browser, geen foto's. Leer alleen je eigen gezicht aan of dat van iemand die hiervoor toestemming geeft.</p>
     <p><label><input id="face-share" type="checkbox" disabled> Duck mag de herkende naam gebruiken</label></p>
     <button id="face-greet" disabled>Laat Duck mij begroeten</button>
-    <p class="hint">Met naamdelen kan de gesprekshulp alleen aantallen en een mogelijke naam lezen wanneer je ernaar vraagt; geen beeld of gezichtsprofiel. Een eerder gedeelde naam kan nog in het lopende gesprek staan. Herkenning kan zich vergissen en een foto kan voor een gezicht doorgaan. Gebruik dit niet als toegangsbeveiliging.</p>
+    <p class="hint">Met naamdelen kan de gesprekshulp automatisch mogelijke namen en een mogelijke spreker gebruiken tijdens het gesprek; geen beeld of gezichtsprofiel. Sprekerherkenning is een proef met mondbeweging tijdens spraak, geen stemherkenning. Bij twijfel vraagt Duck wie praat. Een eerder gedeelde naam kan nog in het lopende gesprek staan. Herkenning kan zich vergissen en een foto kan voor een gezicht doorgaan. Gebruik dit niet als toegangsbeveiliging.</p>
     <details><summary>Mijn gezichtsprofielen</summary><div id="face-profiles"></div><button id="face-clear">Wis alle gezichtsprofielen</button></details>`;
   container.insertBefore(section, container.querySelector('#settings-state'));
   const $ = selector => section.querySelector(selector), gallery = new FaceGallery(storage);
@@ -44,10 +44,11 @@ export function mountFacePanel({ container, storage, defaultName = '', onActivit
       $('#face-share').disabled = !camera.active;
       if (!camera.active) $('#face-share').checked = false;
       $('#face-preview').hidden = !camera.active;
-      onActivity();
+      onActivity(); onContext();
     },
-    onResult({ faces, match, learnReady, message }) {
-      $('#face-result').textContent = message;
+    onResult({ faces, match, learnReady, message, speaker }) {
+      $('#face-result').textContent = message + (speaker ? ` Mogelijke spreker: ${speaker.name}.` : '');
+      onContext();
       $('#face-learn').disabled = !learnReady;
       $('#face-greet').disabled = !match || !camera.shareName;
       drawFaceOverlay($('#face-overlay'), $('#face-video'), faces, match);
@@ -83,6 +84,7 @@ export function mountFacePanel({ container, storage, defaultName = '', onActivit
   });
   $('#face-share').addEventListener('change', event => {
     camera.shareName = event.target.checked;
+    onContext();
     $('#face-greet').disabled = !camera.match || !camera.shareName;
   });
   $('#face-greet').addEventListener('click', () => {

@@ -254,3 +254,65 @@ test('default browser timers retain their Window receiver so enrollment reaches 
   assert.equal(camera.learn('Michael').name, 'Michael');
   camera.stop(); assert.equal(timers.size, 0);
 });
+
+const talkingFace = (index, opening) => {
+  const result = face(index);
+  const mouth = Array.from({ length: 20 }, () => ({ x: 10, y: 10 }));
+  mouth[0] = { x: 0, y: 0 }; mouth[6] = { x: 100, y: 0 };
+  for (const [top, bottom] of [[13, 19], [14, 18], [15, 17]]) {
+    mouth[top] = { x: 50, y: 0 }; mouth[bottom] = { x: 50, y: opening * 100 };
+  }
+  result.landmarks = { getMouth: () => mouth };
+  return result;
+};
+
+test('multiple enrolled people stabilize independently and duplicate or missing identities are withheld', async () => {
+  let faces = [face(0), face(1)]; const f = cameraFixture({ detect: async () => faces });
+  let id = 0; f.gallery.makeId = () => String(++id);
+  f.gallery.add('Michael', samples(0)); f.gallery.add('Anne', samples(1));
+  await f.camera.start(); await f.frame(); await f.frame();
+  assert.deepEqual(f.camera.status().recognized_people, []);
+  f.camera.shareName = true;
+  assert.deepEqual(f.camera.status().recognized_people, [{ name: 'Michael' }, { name: 'Anne' }]);
+  assert.equal(f.camera.recent.length, 0, 'multi-face recognition must not enable enrollment');
+  faces = [face(0), face(0)]; await f.frame();
+  assert.deepEqual(f.camera.status().recognized_people, []);
+  f.camera.stop();
+});
+
+test('mouth movement during detected speech selects one possible speaker; no audio, unknown faces and simultaneous movement abstain', async () => {
+  let opening = 0.01, other = 0.01, unknown = false;
+  const f = cameraFixture({ detect: async () => [talkingFace(0, opening), talkingFace(unknown ? 2 : 1, other)] });
+  let id = 0; f.gallery.makeId = () => String(++id);
+  f.gallery.add('Michael', samples(0)); f.gallery.add('Anne', samples(1));
+  await f.camera.start(); await f.frame(); await f.frame(); f.camera.shareName = true;
+  for (const value of [0.15, 0.01, 0.15]) { opening = value; await f.frame(); }
+  assert.equal(f.camera.status().possible_speaker_name, null, 'silent mouth movements are not speech');
+  f.camera.setSpeechActive(true);
+  for (const value of [0.01, 0.15, 0.01]) { opening = value; await f.frame(); }
+  assert.equal(f.camera.status().possible_speaker_name, 'Michael');
+  f.camera.setSpeechActive(false);
+  assert.equal(f.camera.status().possible_speaker_name, 'Michael', 'turn result remains available to answer tool');
+  f.camera.setSpeechActive(true);
+  for (const value of [0.01, 0.15, 0.01]) { opening = other = value; await f.frame(); }
+  assert.equal(f.camera.status().possible_speaker_name, null, 'two moving mouths are ambiguous');
+  unknown = true; f.camera.setSpeechActive(true); other = 0.01;
+  for (const value of [0.01, 0.15, 0.01]) { opening = value; await f.frame(); }
+  assert.equal(f.camera.status().possible_speaker_name, null, 'unrecognized people prevent attribution');
+  f.camera.shareName = false;
+  assert.deepEqual(f.camera.status().recognized_people, []);
+  assert.equal(f.camera.status().possible_speaker_name, null);
+  f.camera.stop();
+});
+
+test('a static open mouth, missing landmarks, short speech and a stale turn never identify a speaker', async () => {
+  let current = talkingFace(0, 0.15); const f = cameraFixture({ detect: async () => [current] });
+  f.gallery.add('Michael', samples(0)); await f.camera.start(); await f.frame(); await f.frame(); f.camera.shareName = true;
+  f.camera.setSpeechActive(true); await f.frame(); await f.frame(); await f.frame();
+  assert.equal(f.camera.status().possible_speaker_name, null);
+  current = face(); await f.frame(); assert.equal(f.camera.status().possible_speaker_name, null);
+  f.camera.setSpeechActive(true); current = talkingFace(0, 0.01); await f.frame();
+  f.camera.setSpeechActive(false); assert.equal(f.camera.status().possible_speaker_name, null);
+  f.camera.speaker = { id: 'id', name: 'Michael' }; f.camera.speakerAt = 0; f.tick(16000);
+  assert.equal(f.camera.status().possible_speaker_name, null); f.camera.stop();
+});

@@ -80,6 +80,7 @@ let wake, facePanel;
 const conversation = new DuckConversation({
   companionStore: store,
   cameraStatus: () => facePanel?.camera.status() || { camera_active: false },
+  onSpeechActivity(active) { facePanel?.camera.setSpeechActive(active); },
   onMemoryChanged() { renderMemories(); conversation.updatePersonalization(); },
   onStatus(message, active) {
     root.querySelector('#status').textContent = message;
@@ -223,6 +224,7 @@ $('#nature-photo').addEventListener('change', async event => {
   event.target.value = '';
 });
 facePanel = mountFacePanel({ container: root.querySelector('section'), storage, defaultName: store.preferences.userName,
+  onContext() { conversation.updateCameraContext(); },
   onActivity() { stop.disabled = !wake?.enabled && !conversation.controller && !facePanel?.camera.active; },
   onGreet() { arming++; wake.pause(); void conversation.start({ initialText: 'Gebruik get_camera_status voor de lokale camerastatus. Als een mogelijke naam beschikbaar is, vraag kort en warm of die herkenning klopt en begroet me daarna. Zeg eerlijk als herkennen niet lukte.' }); },
 });

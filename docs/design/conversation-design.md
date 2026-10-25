@@ -253,7 +253,7 @@ keep their existing independent pipelines.
 
 Only TinyFaceDetector, the tiny 68-point landmark network and the 128-dimensional
 recognition network are loaded. No age/gender/emotion or other attribute heads
-are loaded or invoked. Inference is serial, with a 750 ms pause between completed
+are loaded or invoked. Inference is serial, with a 250 ms pause between completed
 passes. A usable enrollment observation requires exactly one face, score >=0.8,
 and a box >=100x100 pixels. Three recent, consistent descriptor samples are needed
 before the explicit Learn button can create a record. Enrollment rejects invalid
@@ -266,9 +266,10 @@ with the engine version, up to five opaque IDs, user-supplied names and three
 The ordinary memory toggle/clear function does not delete this separate gallery;
 it has its own per-profile and clear-all controls. Match scoring uses minimum
 Euclidean distance over a person's samples, threshold 0.45 and at least 0.08
-margin against the next person. A name is surfaced only after three consecutive
-single-face matches. No face, multiple faces, poor quality, unknown/ambiguous
-results or a >5 second stale observation withhold the name immediately. These
+margin against the next person. Each enrolled person is surfaced after three consecutive quality matches, including
+when several people are visible. Duplicate identity matches in one frame are rejected.
+Enrollment still requires exactly one face. Missing, poor quality, unknown/ambiguous
+results or a >5 second stale observation withhold the affected name immediately. These
 are conservative heuristic thresholds, not calibrated identity probabilities.
 There is no liveness proof: photos and false matches are possible.
 
@@ -281,11 +282,29 @@ three-frame enrollment and stop path; the wake restart timer has the same fix.
 Node's permissive timer receivers had hidden this issue from earlier tests.
 
 The local `get_camera_status` Realtime function is read-only and never starts a
-camera. It returns active state and a recent face count, plus a possible name only
-when the user opts in to name sharing in the camera panel. It never exposes images,
-landmarks or descriptors to the model. It is invoked in response to a conversation
-request, not periodically; a dedicated greeting button starts a fresh conversation
-asking the model to check this tool and acknowledge uncertainty. The base Dutch
+camera. It returns active state and a recent face count, plus a list of possible
+names and a possible speaker only when the user opts in to name sharing. It never
+exposes images, landmarks or descriptors to the model. Current consented context
+is included in session instructions and refreshed only when it changes; microphone
+VAD start/stop events also refresh it. Instructions require a fresh status tool call
+before answering with name sharing enabled, avoiding stale attribution during the
+automatic VAD response. Updates do not create responses or interrupt playback.
+A dedicated greeting button can still start a fresh conversation.
+
+Speaker attribution is an experimental local heuristic, not voice identification.
+Only during Realtime input VAD speech does each stable enrolled face accumulate
+up to 12 mouth-opening measurements over 2.5 seconds. Inner-lip distance is
+normalized by mouth width. At least three measurements spanning 400 ms, two
+changes >0.025 and a range >0.06 are required. Exactly one moving mouth and all
+visible faces recognized are required; otherwise attribution is withheld. The
+possible speaker remains available after speech ends for at most 15 seconds,
+provided the face is still present and fresh; the next speech start clears it.
+Short utterances, CPU latency, eating, off-camera speech and overlapping speakers
+can defeat this heuristic. The assistant asks who is speaking when needed and
+must not equate the only visible face with a proven speaker. No audio identity
+embeddings or image/video recordings are stored.
+
+The base Dutch
 voice/profile, Google tools and explicit memory functions remain present. Names
 are untrusted data, not instructions. Sharing defaults off, is not persisted and
 resets on stop. Already shared names can remain in the conversation/provider

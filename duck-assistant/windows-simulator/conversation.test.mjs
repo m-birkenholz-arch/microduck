@@ -738,20 +738,45 @@ test('a prepared wake context is reused, Stop closes a late unlock, and photos u
   assert.equal(g.duck.primedContext, null); assert.equal(closed, 1);
 });
 
-test('camera status is a read-only local tool, called only when requested and returning no frames or templates', async t => {
+test('camera status reads local state at startup and via a tool without starting capture or sending frames', async t => {
   let calls = 0;
   const f = browserFixture({ companionStore: { preferences: {}, memories: [] }, cameraStatus: () => {
     calls++; return { camera_active: true, name_sharing: false, face_count: 1, possibly_recognized_name: null };
   }, fetchImpl: async url => url.endsWith('/health') ? Response.json({ ready: true, companionVersion: 1, instructions: profile.instructions, tools: [] }) : new Response('v=0\r\nanswer') });
   t.after(() => f.duck.stop()); await f.duck.start(); f.channel.onopen();
   assert.ok(f.channel.messages[0].session.tools.some(x => x.name === 'get_camera_status'));
-  assert.equal(calls, 0, 'session startup must not read or enable a camera');
+  assert.equal(calls, 1, 'startup reads existing state but does not enable a camera');
   f.channel.onmessage({ data: JSON.stringify({ type: 'response.done', response: { id: 'r', status: 'completed', output: [
     { type: 'function_call', name: 'get_camera_status', call_id: 'camera', arguments: '{}' },
   ] } }) });
   await new Promise(resolve => setTimeout(resolve, 0));
-  assert.equal(calls, 1);
+  assert.equal(calls, 2);
   const result = JSON.parse(f.channel.messages.find(x => x.item?.call_id === 'camera').item.output).result;
   assert.equal(result.possibly_recognized_name, null); assert.equal(result.face_count, 1);
   assert.ok(!JSON.stringify(result).includes('descriptor'));
+});
+
+
+test('live camera context reaches session instructions, updates on changes and speech gates the local speaker probe', async t => {
+  const activities = [];
+  let status = { camera_active: true, name_sharing: true, recognized_people: [{ name: 'Michael' }], possible_speaker_name: null };
+  const f = browserFixture({ companionStore: { preferences: {}, memories: [] }, cameraStatus: () => status,
+    onSpeechActivity: value => activities.push(value),
+    fetchImpl: async url => url.endsWith('/health') ? Response.json({ ready: true, companionVersion: 1, instructions: profile.instructions, tools: [] }) : new Response('v=0\r\nanswer') });
+  t.after(() => f.duck.stop()); await f.duck.start(); f.channel.onopen();
+  assert.match(f.channel.messages[0].session.instructions, /Michael/);
+  assert.match(f.channel.messages[0].session.instructions, /vóór elk inhoudelijk antwoord get_camera_status/);
+  f.duck.handleEvent({ type: 'input_audio_buffer.speech_started' });
+  assert.equal(activities.at(-1), true);
+  status = { ...status, possible_speaker_name: 'Michael' };
+  f.duck.updateCameraContext();
+  assert.match(f.channel.messages.at(-1).session.instructions, /"possible_speaker_name":"Michael"/);
+  const count = f.channel.messages.length; f.duck.updateCameraContext();
+  assert.equal(f.channel.messages.length, count, 'identical frames do not flood the channel');
+  f.duck.handleEvent({ type: 'input_audio_buffer.speech_stopped' });
+  assert.equal(activities.at(-1), false);
+  status = { camera_active: true, name_sharing: false }; f.duck.updateCameraContext();
+  assert.ok(!f.channel.messages.at(-1).session.instructions.includes('Michael'));
+  assert.match(f.channel.messages.at(-1).session.instructions, /Gebruik geen eerdere cameranaam/);
+  f.duck.stop(); assert.equal(activities.at(-1), false);
 });

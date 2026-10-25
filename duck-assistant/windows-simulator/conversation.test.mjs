@@ -200,15 +200,15 @@ test('motion stays bounded, fades to neutral and does not queue reactions during
   for (let step = 0; step < 500; step++) {
     const head = [...motion.step(0.02, true)];
     for (let h = 0; h < 4; h++) {
-      assert.ok(Math.abs(head[h]) <= 0.13);
-      assert.ok(Math.abs(head[h] - last[h]) < 0.01);
+      assert.ok(Math.abs(head[h]) <= (h === 0 ? 0.12 : 0.30));
+      assert.ok(Math.abs(head[h] - last[h]) < 0.02);
     }
     moved ||= head.some(value => Math.abs(value) > 0.02);
     last = head;
   }
   assert.ok(moved);
   assert.deepEqual(motion.step(0.02, false), [0, 0, 0, 0]);
-  assert.ok(motion.step(0.02, true).every(value => Math.abs(value) < 0.01));
+  assert.ok(motion.step(0.02, true).every(value => Math.abs(value) < 0.02));
   motion.setPhase('listening');
   for (let step = 0; step < 100; step++) motion.step(0.02, true);
   assert.ok(motion.head[3] > 0.02);
@@ -218,6 +218,31 @@ test('motion stays bounded, fades to neutral and does not queue reactions during
   motion.setPhase('speaking');
   motion.enabled = false;
   assert.deepEqual(motion.step(0.02, true), [0, 0, 0, 0]);
+});
+
+test('quiet speech has visible motion and strength can be adjusted within bounded offsets', () => {
+  const peakAt = strength => {
+    const motion = new ConversationMotion();
+    motion.setStrength(strength);
+    motion.setPhase('speaking');
+    motion.setLevel(0.05); // Quiet laptop audio, rather than a full-scale test tone.
+    let peak = 0;
+    for (let step = 0; step < 600; step++) {
+      const head = motion.step(0.02, true);
+      peak = Math.max(peak, Math.abs(head[2]), Math.abs(head[3]));
+      assert.ok(head.every(v => Number.isFinite(v) && Math.abs(v) <= 0.30));
+    }
+    return peak;
+  };
+  const quiet = peakAt(1);
+  const clear = peakAt(3);
+  assert.ok(clear > 0.10, 'at least about six degrees for quiet speech');
+  assert.ok(clear > quiet * 2.9);
+  assert.ok(peakAt(4) > clear);
+  const motion = new ConversationMotion();
+  motion.setStrength(100); assert.equal(motion.strength, 4);
+  motion.setStrength(-1); assert.equal(motion.strength, 1);
+  motion.setStrength(NaN); assert.equal(motion.strength, 3);
 });
 
 test('installer refuses an unknown simulator version before editing files', async t => {

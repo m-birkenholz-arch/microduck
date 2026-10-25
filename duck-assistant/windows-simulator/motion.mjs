@@ -13,6 +13,7 @@ export class ConversationMotion {
   constructor() {
     this.phase = 'off';
     this.enabled = true;
+    this.strength = 3;
     this.level = 0;
     this.time = 0;
     this.head = [0, 0, 0, 0];
@@ -29,6 +30,10 @@ export class ConversationMotion {
     this.level = Number.isFinite(level) ? Math.max(0, Math.min(1, level)) : 0;
   }
 
+  setStrength(value) {
+    this.strength = Number.isFinite(value) ? Math.max(1, Math.min(4, value)) : 3;
+  }
+
   step(dt, allowed) {
     // The caller owns arbitration. Reset rather than queue gestures while a
     // person, a trick, a recovery or a community policy has the duck.
@@ -40,7 +45,9 @@ export class ConversationMotion {
       // Same small chorale sway; a syllable's loudness replaces note reach.
       target = headExpression(this.time * 1.15, this.level);
       target[0] = 0.025 * this.level;
-      target = target.map(v => v * (0.35 + 0.65 * this.level));
+      // Laptop audio often has a low RMS level. Keep the phrase sway visible
+      // between quiet syllables instead of attenuating it almost to nothing.
+      target = target.map(v => v * (0.60 + 0.40 * this.level));
     } else if (this.phase === 'listening' || this.phase === 'thinking') {
       // The idle behaviour's curious tilt and neck lean, kept facing the user
       // instead of random glances or yawns in the middle of a conversation.
@@ -51,7 +58,9 @@ export class ConversationMotion {
     }
     const alpha = 1 - Math.exp(-seconds / 0.35);
     for (let i = 0; i < 4; i++) {
-      this.head[i] += alpha * (target[i] - this.head[i]);
+      const limit = i === 0 ? 0.12 : 0.30;
+      const scaled = Math.max(-limit, Math.min(limit, target[i] * this.strength));
+      this.head[i] += alpha * (scaled - this.head[i]);
       if (Math.abs(this.head[i]) < 1e-6) this.head[i] = 0;
     }
     return this.head;

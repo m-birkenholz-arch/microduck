@@ -40,7 +40,10 @@ Ververs `http://localhost:5173`. Rechtsboven staat **Praat met Microduck**:
 4. Praat door een antwoord heen om onderbreken te proberen.
 5. Klik op **Stop** om de verbinding en de microfoon af te sluiten.
 
-**Hoofd en nek bewegen mee** schakelt de lichaamsreacties aan of uit. Tijdens
+**Hoofd en nek bewegen mee** schakelt de lichaamsreacties aan of uit.
+Met **Sterkte beweging** kies je 1× tot 4×; standaard staat dit op 3× zodat de
+reacties ook bij zacht laptopgeluid zichtbaar zijn.
+Tijdens
 spreken beweegt de kop met het volume en de bestaande expressieve zangbeweging.
 Tijdens luisteren kantelt de kop rustig. De reacties worden naar neutraal gedempt
 wanneer het gesprek stopt. Ze wijken voor lopen, handmatige hoofdbesturing,

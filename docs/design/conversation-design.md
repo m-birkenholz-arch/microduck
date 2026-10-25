@@ -158,3 +158,9 @@ cannot be assumed to work in the browser walker's body command slots.
 
 The browser build and automated tests do not establish Windows device access or
 live OpenAI account/model access; those require a conversation on the laptop.
+
+The browser motion strength defaults to 3x, adjustable from 1x to 4x. A speech
+phrase retains a 0.60 amplitude floor so low laptop RMS does not make the sway
+invisible. Scaled offsets are capped at 0.12 rad for the neck and 0.30 rad for
+other head axes before the existing smoothing; these are simulator command
+bounds, not measured guarantees about rendered angles or hardware validation.

@@ -5,7 +5,9 @@ export class DuckConversation {
     makePeer = () => new RTCPeerConnection(),
     makeAudio = () => new Audio(),
     makeContext = () => new AudioContext(),
-    fetchImpl = globalThis.fetch,
+    // Window.fetch checks its receiver; calling a stored bare fetch as a method
+    // of DuckConversation throws Illegal invocation before making any request.
+    fetchImpl = (...args) => globalThis.fetch(...args),
   } = {}) {
     Object.assign(this, { onStatus, onText, onLevel, mediaDevices, makePeer, makeAudio, makeContext, fetchImpl });
     this.generation = 0;
@@ -17,23 +19,27 @@ export class DuckConversation {
     const current = () => generation === this.generation;
     this.onStatus('Verbinden…', true);
     const controller = this.controller = new AbortController();
+    let phase = 'audio';
     try {
       // Resume audio in the button's user gesture so autoplay does not block it.
       const context = this.context = this.makeContext();
       await context.resume();
       if (!current()) return;
+      phase = 'helper';
       const health = await this.fetchImpl('http://127.0.0.1:8787/health', {
         signal: AbortSignal.any([controller.signal, AbortSignal.timeout(5000)]),
       });
       if (!health.ok) throw new Error(await health.text());
       if (!(await health.json()).ready) throw new Error('Vul je API-key in het PowerShell-venster in.');
       if (!this.mediaDevices?.getUserMedia) throw new Error('Open de simulator op http://localhost:5173 in Chrome of Edge.');
+      phase = 'microphone';
       const stream = await this.mediaDevices.getUserMedia({ audio: {
         echoCancellation: true, noiseSuppression: true, autoGainControl: true,
       } });
       // Stop can be clicked while the browser permission dialog is still open.
       if (!current()) { stream.getTracks().forEach(track => track.stop()); return; }
       this.stream = stream;
+      phase = 'webrtc';
       const peer = this.peer = this.makePeer();
       const audio = this.audio = this.makeAudio();
       audio.autoplay = true;
@@ -74,6 +80,7 @@ export class DuckConversation {
       const offer = await peer.createOffer();
       if (!current()) return;
       await peer.setLocalDescription(offer);
+      phase = 'helper';
       const response = await this.fetchImpl('http://127.0.0.1:8787/session', {
         method: 'POST', headers: { 'Content-Type': 'application/sdp' }, body: offer.sdp,
         signal: AbortSignal.any([controller.signal, AbortSignal.timeout(35000)]),
@@ -81,6 +88,7 @@ export class DuckConversation {
       if (!response.ok) throw new Error(await response.text());
       const answer = await response.text();
       if (!current()) return;
+      phase = 'webrtc';
       await peer.setRemoteDescription({ type: 'answer', sdp: answer });
       if (!current()) return;
       this.connectionTimer = setTimeout(() => {
@@ -88,10 +96,11 @@ export class DuckConversation {
       }, 20000);
     } catch (error) {
       if (current()) {
-        const message = error.name === 'NotAllowedError'
+        const message = error.name === 'NotAllowedError' && phase === 'microphone'
           ? 'Microfoon geweigerd. Geef Chrome of Edge microfoontoegang en start opnieuw.'
           : error.name === 'NotFoundError' ? 'Geen microfoon gevonden. Sluit een microfoon aan.'
-          : error instanceof TypeError ? 'Gesprekshulp niet bereikbaar. Laat start.ps1 openstaan op je laptop.'
+          : error instanceof TypeError && phase === 'helper'
+            ? `Gesprekshulp niet bereikbaar (${error.message}). Laat start.ps1 openstaan en gebruik http://localhost:5173.`
           : error.message;
         this.fail(message);
       }

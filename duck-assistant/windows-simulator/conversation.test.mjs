@@ -146,6 +146,23 @@ test('barge-in immediately mutes playback, the next answer unmutes it, Stop rele
   assert.ok(f.track.stopped && f.peer.closed && f.channel.closed);
 });
 
+test('the default browser fetch keeps its Window receiver rather than the conversation instance', async t => {
+  // Node fetch tolerates any receiver. Window.fetch rejects the old this.fetchImpl
+  // call before sending a request, even when the loopback helper is running.
+  let requests = 0;
+  t.mock.method(globalThis, 'fetch', async function(url) {
+    if (this !== globalThis) throw new TypeError('Illegal invocation');
+    requests++;
+    return new Response(url.endsWith('/health') ? '{"ready":true}' : 'v=0\r\nanswer');
+  });
+  const f = browserFixture({ fetchImpl: undefined });
+  t.after(() => f.duck.stop());
+  await f.duck.start();
+  assert.equal(requests, 2);
+  assert.equal(f.duck.peer, f.peer);
+  assert.equal(f.track.stopped, false);
+});
+
 test('Stop while microphone permission is pending cannot leave a live microphone behind', async () => {
   let resolveMic;
   const f = browserFixture({ mediaDevices: { getUserMedia: () => new Promise(resolve => { resolveMic = resolve; }) } });

@@ -1,10 +1,12 @@
 // Browser audio uses WebRTC; the local helper handles SDP and Google lookup.
+import { companionInstructions, memoryTools, memoryHandlers } from './companion.mjs';
 import { SearchTools } from './search-tools.mjs';
 import { createDuckVoice } from './voice.mjs';
 import { AnswerGestureCue } from './gestures.mjs';
 
 export class DuckConversation {
   constructor({ onStatus = () => {}, onText = () => {}, onLevel = () => {}, onPhase = () => {}, onGesture = () => {}, onSearchReady = () => {}, onSearchResult = () => {},
+    companionStore, onMemoryChanged = () => {},
     mediaDevices = globalThis.navigator?.mediaDevices,
     makePeer = () => new RTCPeerConnection(),
     makeAudio = () => new Audio(),
@@ -14,13 +16,16 @@ export class DuckConversation {
     // of DuckConversation throws Illegal invocation before making any request.
     fetchImpl = (...args) => globalThis.fetch(...args),
   } = {}) {
-    Object.assign(this, { onStatus, onText, onLevel, onPhase, mediaDevices, makePeer, makeAudio, makeContext, makeVoice, fetchImpl, onSearchReady, onSearchResult });
+    Object.assign(this, { onStatus, onText, onLevel, onPhase, mediaDevices, makePeer, makeAudio, makeContext, makeVoice, fetchImpl, onSearchReady, onSearchResult, companionStore, onMemoryChanged });
     this.generation = 0;
-    this.voicePitch = 5;
+    this.voicePitch = companionStore?.preferences.pitch ?? 5;
+    this.volume = companionStore?.preferences.volume ?? 1;
     this.gestureCue = new AnswerGestureCue(onGesture);
   }
 
-  async start() {
+  async start({ initialText, initialImage } = {}) {
+    const primed = this.primedContext;
+    this.primedContext = null;
     this.stop();
     const generation = this.generation;
     const current = () => generation === this.generation;
@@ -30,12 +35,13 @@ export class DuckConversation {
     let phase = 'audio';
     try {
       // Resume audio in the button's user gesture so autoplay does not block it.
-      const context = this.context = this.makeContext();
+      const context = this.context = primed || this.makeContext();
       await context.resume();
       if (!current()) return;
       const voice = await this.makeVoice(context, this.voicePitch);
       if (!current()) { voice.close(); return; }
       this.voice = voice;
+      voice.setVolume?.(this.volume);
       voice.input.onprocessorerror = () => { if (current()) this.fail('Eendenstem gestopt. Stop en start het gesprek opnieuw.'); };
       phase = 'helper';
       const health = await this.fetchImpl('http://127.0.0.1:8787/health', {
@@ -44,6 +50,9 @@ export class DuckConversation {
       if (!health.ok) throw new Error(await health.text());
       const capabilities = await health.json();
       this.onSearchReady(Boolean(capabilities.googleSearch));
+      this.baseInstructions = capabilities.instructions;
+      this.baseTools = capabilities.tools || [];
+      if (this.companionStore && capabilities.companionVersion !== 1) throw new Error('Werk de gesprekshulp bij en start start.ps1 opnieuw voor naam en geheugen.');
       if (!capabilities.ready) throw new Error('Vul je API-key in het PowerShell-venster in.');
       if (!this.mediaDevices?.getUserMedia) throw new Error('Open de simulator op http://localhost:5173 in Chrome of Edge.');
       phase = 'microphone';
@@ -88,6 +97,7 @@ export class DuckConversation {
       for (const track of stream.getAudioTracks()) peer.addTrack(track, stream);
       const channel = this.channel = peer.createDataChannel('oai-events');
       this.searchTools = new SearchTools({
+        extraTools: this.companionStore ? memoryHandlers(this.companionStore, () => this.onMemoryChanged()) : {},
         send: event => { if (current() && channel.readyState === 'open') channel.send(JSON.stringify(event)); },
         search: async (query, signal) => {
           const response = await this.fetchImpl('http://127.0.0.1:8787/search', {
@@ -110,8 +120,13 @@ export class DuckConversation {
           // still running. A browser-only update need not ask for the key again.
           channel.send(JSON.stringify({ type: 'session.update', session: {
             type: 'realtime', audio: { output: { voice: 'shimmer' } },
+            ...this.personalization(),
           } }));
           this.onPhase('listening'); this.onStatus('Verbonden — praat maar', true);
+          if (initialText || initialImage) {
+            try { this.ask(initialText || 'Wat zie je op deze natuurfoto?', initialImage); }
+            catch (error) { this.fail(error.message); }
+          }
         }
       };
       channel.onclose = () => { if (current()) this.fail('De gespreksverbinding is gesloten. Je kunt opnieuw starten.'); };
@@ -180,6 +195,38 @@ export class DuckConversation {
     this.searchTools?.handleEvent(event);
   }
 
+  personalization() {
+    if (!this.companionStore || !this.baseInstructions) return {};
+    const store = this.companionStore;
+    return { instructions: this.baseInstructions + companionInstructions(store.preferences, store.memories),
+      tools: [...this.baseTools, ...(store.preferences.memoryEnabled ? memoryTools : [])], tool_choice: 'auto' };
+  }
+
+  updatePersonalization() {
+    if (this.channel?.readyState === 'open') this.channel.send(JSON.stringify({ type: 'session.update', session: { type: 'realtime', ...this.personalization() } }));
+  }
+
+  async primeAudio() {
+    if (this.primedContext) return;
+    const context = this.makeContext(), generation = this.generation;
+    try { await context.resume(); if (generation !== this.generation) { await context.close().catch(() => {}); return; } this.primedContext = context; }
+    catch (error) { await context.close().catch(() => {}); throw error; }
+  }
+
+  ask(text, image) {
+    if (this.channel?.readyState !== 'open') throw new Error('Start eerst een gesprek.');
+    if (image && (!/^data:image\/(?:jpeg|png);base64,[A-Za-z0-9+/=]+$/.test(image) || image.length > 48000)) throw new Error('Foto te groot of ongeldig.');
+    const content = [{ type: 'input_text', text: String(text).slice(0, 2000) }];
+    if (image) content.push({ type: 'input_image', image_url: image });
+    this.channel.send(JSON.stringify({ type: 'conversation.item.create', item: { type: 'message', role: 'user', content } }));
+    this.channel.send(JSON.stringify({ type: 'response.create' }));
+  }
+
+  setVolume(value) {
+    this.volume = Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 1;
+    this.voice?.setVolume?.(this.volume);
+  }
+
   setVoicePitch(value) {
     this.voicePitch = Number.isFinite(value) ? Math.max(0, Math.min(9, value)) : 5;
     this.voice?.setPitch(this.voicePitch);
@@ -205,6 +252,8 @@ export class DuckConversation {
     this.analyser?.disconnect();
     this.voice = this.analyser = null;
     this.context?.close().catch(() => {});
+    this.primedContext?.close().catch(() => {});
+    this.primedContext = null;
     this.controller = this.channel = this.peer = this.stream = this.audio = this.context = this.source = null;
     this.onLevel(0);
     this.onPhase('off');

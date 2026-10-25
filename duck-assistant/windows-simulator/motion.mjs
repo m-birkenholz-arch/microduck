@@ -41,7 +41,7 @@ export class ConversationMotion {
   }
 
   triggerGesture(kind) {
-    if (!this.enabled || this.phase !== 'speaking' || !['yes', 'no'].includes(kind)) return;
+    if (!this.enabled || this.phase !== 'speaking' || !['yes', 'no', 'happy', 'curious'].includes(kind)) return;
     this.gesture = kind;
     this.gestureTime = 0;
   }
@@ -92,7 +92,12 @@ export class ConversationMotion {
         const wave = Math.sin(4 * Math.PI * progress) * Math.sin(Math.PI * progress) ** 2;
         // A deliberate nod/shake owns the head for two smooth cycles. Suppress
         // the generic sideways sway so a yes cannot look like a mixed signal.
-        target = this.gesture === 'yes' ? [-0.02 * wave, 0.10 * wave, 0, 0] : [0, 0, 0.10 * wave, 0];
+        if (this.gesture === 'yes') target = [-0.02 * wave, 0.10 * wave, 0, 0];
+        else if (this.gesture === 'no') target = [0, 0, 0.10 * wave, 0];
+        else if (this.gesture === 'happy') {
+          target = [0.015 * wave, -0.055 * wave, 0, 0.035 * wave];
+          bodyTarget[0] += 0.0015 * Math.sin(Math.PI * progress) ** 2;
+        } else target = [0.015, -0.015, 0.025 * Math.sin(Math.PI * progress), 0.065 * Math.sin(Math.PI * progress)];
       }
     }
     const alpha = 1 - Math.exp(-seconds / 0.35);

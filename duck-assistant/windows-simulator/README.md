@@ -78,12 +78,85 @@ De basisstem is `shimmer`. In de browser maakt een lokale stemvervorming de
 toonhoogte en klank hoger zonder het spreektempo te verhogen. **Eendenstem**
 staat standaard op 5 halve tonen hoger; met de schuif kies je direct tussen
 0 (basisstem) en 9 (extra klein en hoog), ook tijdens een gesprek. De instelling
-blijft gelden tot de pagina opnieuw geladen wordt. De verwerking voegt maximaal
+wordt samen met volume, bewegingen en persoonlijkheid lokaal in deze browser bewaard. De verwerking voegt maximaal
 ongeveer 68 ms vertraging toe en kan een licht korrelige klank geven. Test op je
 laptop wat schattig én verstaanbaar klinkt. Er worden geen extra API-aanroepen gedaan.
 Na een update van `session.json` moet je de hulpserver opnieuw starten en een nieuw
 gesprek beginnen. De lokale stemvervorming geldt voor de browsersimulator; op de
 fysieke robot wordt deze nog niet toegepast.
+
+## Naam, geheugen, ochtendpraatje en natuurmaatje
+
+Onder **Mijn eendje en instellingen** geef je de duck een naam, vul je eventueel
+je eigen naam, interesses en weerplaats in en kies je Nieuwsgierig, Rustig of
+Speels. **Bewaar instellingen** bewaart dit lokaal in deze browser. Stemhoogte,
+volume, bewegingssterkte en beide bewegingsvinkjes worden direct bewaard.
+Instellingen horen bij browserprofiel én origin: gebruik steeds dezelfde browser
+en hetzelfde adres (bijvoorbeeld `http://localhost:5173`). Privémodus of het wissen
+van sitegegevens kan ze verwijderen. Er staat geen kopie van persoonlijke gegevens
+in GitHub. Geblokkeerde of volle browseropslag geeft een foutmelding.
+
+**Goedemorgen** start een nieuw gesprek met een kort ochtendpraatje. De ingestelde
+plaats kan voor het weer worden gebruikt, met een natuur- of wetenschapsfeitje en
+een vraag naar je plannen. Zonder plaats hoort hij daar eerst naar te vragen.
+Ook “goedemorgen” tijdens een gewoon gesprek krijgt deze instructie. Er is geen
+klokgestuurde taak of automatische dagelijkse aankondiging.
+
+Het karakter stelt soms een passende vervolgvraag. **Natuurmaatje** richt het
+gesprek op dieren, planten en natuurverschijnselen, met Google voor feitelijke
+naslag. Naast ja/nee-gebaren kunnen duidelijke uitingen als “Wat leuk!” of
+“Wat vind jij daarvan?” een enthousiaste beweging of nieuwsgierige kanteling
+geven. De bestaande bewegingsgrenzen en handmatige voorrang blijven gelden.
+
+Onder **Wat onthoud ik?** kun je maximaal 30 herinneringen bekijken, zelf toevoegen,
+los verwijderen of allemaal wissen. Je kunt ook zeggen **“Onthoud dat ik van
+vogels houd”**, **“Wat heb je van mij onthouden?”** of vragen een specifieke
+herinnering te vergeten. De modelinstructies staan opslaan alleen toe bij een
+expliciet verzoek; de functie vereist ook een expliciete-verzoekvlag. Geen
+achtergrondextractie of volledig gespreksarchief. Veelgebruikte sleutel- en
+wachtwoordpatronen worden geweigerd; zet zelf geen geheimen in vrije tekst.
+Alleen geslaagde opslag mag als bewaard worden bevestigd.
+
+Instellingen en herinneringen staan als leesbare gegevens in localStorage, niet
+in een versleutelde kluis. Bij een nieuw gesprek gaan naam, interesses, plaats en
+het ingeschakelde geheugen naar OpenAI. Het volledige geheugen gaat niet naar
+Google, maar een door het model geformuleerde zoekvraag kan wel relevante context
+bevatten. **Geheugen gebruiken** uitzetten houdt opgeslagen notities lokaal maar
+stuurt ze bij het volgende gesprek niet mee. De UI sluit bij uitzetten/verwijderen
+het lopende gesprek af om geen oude persoonlijke context te blijven gebruiken.
+Verwijderen is geen verzoek om eerder bij providers verwerkte gegevens te wissen.
+
+### Wekwoord
+
+Klik eenmaal op **Wacht op hé Duck** (of de gekozen naam). De browser vraagt zo
+nodig om microfoontoegang. Zeg daarna **“Hé Duck”** of **“Hé Duck, hoe werkt een
+motor?”**. Na herkenning stopt de wekwoordherkenner en start de gewone Realtime-
+verbinding; een vraag achter de naam wordt als tekst meegenomen. Voor terugkeer
+naar luisterstand klik je weer op **Wacht op hé …**. **Stop alles** sluit zowel
+Realtime als de wekwoordmicrofoon en de voorbereide audio-context af.
+
+Dit gebruikt `SpeechRecognition`/`webkitSpeechRecognition` waar beschikbaar in
+Chrome of Edge. De browser kan audio voor herkenning naar zijn eigen online
+dienst sturen, ook vóór een wekwoord wordt herkend. Het is geen gegarandeerd
+lokaal of offline wekwoord. Fouten in toestemming, netwerk of ondersteuning
+stoppen de herkenner met een melding; **Start gesprek** blijft beschikbaar.
+Wekwoordluisteren begint nooit automatisch na herladen, en verbergen van de tab
+stopt alle luisterstanden. In een open tab kan de browser de herkenning alsnog
+onderbreken. Windows-gedrag en herkenningskwaliteit moeten live worden getest.
+
+### Natuurfoto en camera
+
+Onder **Samen de natuur ontdekken** kun je bewust één JPG-, PNG- of WebP-foto
+kiezen (maximaal 8 MB). De browser verkleint die tot een JPEG-bericht van maximaal
+48.000 tekens en deelt die in een nieuw Realtime-gesprek met OpenAI. De foto wordt
+niet in localStorage of GitHub bewaard. De duck krijgt instructies onzekerheid bij
+herkennen te benoemen en geen opdrachten uit tekst op de foto te volgen.
+
+De camera in de browsersimulator is een virtuele scènecamera; hij levert geen
+beeld van je kamer of echte dieren. De fysieke robot publiceert camera en control
+via de bestaande WebRTC-interface. Die stream en de instellingen/motorbesturing
+moeten later op het echte apparaat worden aangesloten en getest. Foto-input is nu
+een eerste simulatorproef, geen continue fysieke camera-integratie.
 
 ## Google Search inschakelen
 
@@ -138,6 +211,12 @@ Open daarnaast PowerShell en voer uit:
 powershell -NoProfile -ExecutionPolicy Bypass -File "$env:USERPROFILE\microduck-simulator\duck-conversation-tools\start.ps1"
 ```
 
+De nieuwe naam-/geheugenfuncties vereisen de bijgewerkte hulpserver; herstart
+na deze update. Met `start.ps1 -GoogleSearch -RestartHelper` kan de launcher eerst
+een herkenbare oude `node.exe ...duck-conversation-tools...server.mjs` op poort
+8787 stoppen. Andere processen worden geweigerd. De poortcontrole gebeurt vóór
+het vragen om keys, zodat een bezette poort geen onnodige invoerronde kost.
+
 De hulpserver gebruikt alleen `127.0.0.1:8787`. Sluit een oude hulpserver als deze
 poort bezet is. Open de simulator op poort 5173; andere origins worden geweigerd.
 `DUCK_OPENAI_MODEL` kan het bestaande standaardmodel `gpt-realtime-2.1` overriden.
@@ -149,7 +228,7 @@ API-tegoed en modeltoegang hebben.
 Vanuit de root van de robotrepository:
 
 ```sh
-node --test duck-assistant/windows-simulator/conversation.test.mjs duck-assistant/windows-simulator/search.test.mjs
+node --test duck-assistant/windows-simulator/conversation.test.mjs duck-assistant/windows-simulator/search.test.mjs duck-assistant/windows-simulator/companion.test.mjs
 node duck-assistant/windows-simulator/install.mjs /pad/naar/microduck-simulator
 ```
 

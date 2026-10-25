@@ -140,6 +140,75 @@ jaw opening. Stop, a closed session,
 page exit or a startup failure closes the peer connection and microphone tracks,
 including tracks granted after Stop was pressed during the permission dialog.
 
+### Browser companion state and interaction
+
+`companion.mjs` owns a versioned browser-local profile (`microduck.companion.v1`):
+duck/user names, interests, weather place, personality, nature mode, memory opt-out,
+pitch, volume, motion strength and head/body toggles. Values are bounded and
+unknown fields are discarded. Writes are transactional with respect to in-memory
+state; storage failure cannot be acknowledged as saved. Corrupt data falls back
+to defaults with a UI notice. This is origin/profile-specific plaintext
+localStorage, not account sync, encrypted secrets storage or robot persistence.
+
+Only user-entered notes or the completed `remember_fact` function can add one of
+at most 30 bounded memories. Instructions require an explicit user request, and
+the handler requires `explicit_request: true`; this flag is model-produced, not a
+separate authentication mechanism. Common key/password patterns are rejected.
+There is no transcript archive or background memory extraction. List/forget
+functions and per-note/clear-all UI controls expose the state. Memory-disabled
+sessions omit notes and memory tools. Names and other preferences are still
+shared. UI deletion or disabling closes the current Realtime session to avoid
+continuing with the old context; it cannot delete provider-held historical data.
+Tool-driven deletion updates the current instructions but previous conversation
+items may still carry that fact until the next session.
+
+The helper advertises baseline instructions and Google tool declarations in
+`/health` with `companionVersion: 1`, never keys. The browser appends personality
+and note data as explicitly untrusted JSON to the exact original Dutch profile
+and preserves Google tools when adding memory functions. Memory changes remain
+local; relevant contextual wording can still appear in a Google lookup question.
+UI edits update session instructions without changing the emitted voice. Audio
+and motion slider changes only affect their own live controls and stored values.
+The post-tool continuation remains tool-free to avoid lookup/memory loops.
+
+A morning button begins a new session with a dated, location-aware prompt for
+weather, a nature/science fact and plans; a missing place is requested first.
+A spoken good morning has matching instructions. There is no timed automation.
+Personality asks occasional relevant follow-ups, and nature mode focuses on
+natural phenomena. Clear enthusiasm and curiosity openings add bounded happy or
+curious poses after audible audio begins, with yes/no cues taking precedence.
+All prior head/body arbitration and interruption gates remain in force.
+
+`wake.mjs` is an opt-in browser SpeechRecognition standby mode. A click primes a
+resumed AudioContext for later playback and starts recognition in Dutch. Matching
+uses complete word sequences for “hé/hey/hoi <duck name>”, with any trailing
+question forwarded as text. Recognition stops before Realtime opens, avoiding
+dual microphone consumers and self-triggering on the duck's voice. Ordinary
+recognition end schedules a bounded-delay retry; permission/network errors stop
+with a user-visible fallback. Stop, page exit, HMR or a hidden tab abort both
+modes, timers and audio resources; standby never auto-enables after reload. This
+API may send room audio to a browser vendor's online recognition service; it is
+not an offline keyword detector. Live Windows support, autoplay and recognition
+accuracy remain to be validated.
+
+`photo.mjs` handles a deliberately selected image only, capped at 8 MB, decoded
+and resized to a bounded JPEG data URI for a single Realtime `input_image` item.
+No webcam is automatically opened, no continuous video is sent, and no photo is
+persisted. The current simulator scene camera is only a virtual view (see
+`app/src/scene/GameCanvas.jsx` upstream); actual robot video belongs to the
+existing [WebRTC transport](remote-webrtc.md). Integrating physical camera frames
+and actuators is future work. The model is prompted to express identification
+uncertainty and treat image text as data, not instructions.
+
+These features are browser-only; Rust workspace behavior and physical hardware
+are unchanged. Tests cover storage, memory dispatch, wake boundaries/lifecycle,
+photo limits, voice volume/muting, personalized protocol messages and motion
+caps. A DOM smoke check exercises settings reload, memory controls, safe text
+rendering, wake start/stop and cleanup; it is not a real Windows microphone test.
+
+Interface references: [Realtime image inputs](https://developers.openai.com/api/docs/guides/realtime-conversations#image-inputs)
+and [browser SpeechRecognition](https://developer.mozilla.org/en-US/docs/Web/API/SpeechRecognition).
+
 ### Google Search for browser conversations
 
 When a Google API key is present, the helper adds the `search_web` function and

@@ -635,6 +635,9 @@ test('worklet output gate mutes immediately, clears old speech and closes resour
   voice.setMuted(false); voice.setMuted(true); voice.setPitch(8);
   assert.deepEqual(changes, [1, 0]);
   assert.deepEqual(messages, [{ type: 'reset' }, { type: 'pitch', value: 8 }]);
+  voice.setVolume(0.25); assert.equal(changes.at(-1), 0, 'volume changes cannot unmute an interrupted answer');
+  voice.setMuted(false); assert.equal(changes.at(-1), 0.25);
+  voice.setVolume(2); assert.equal(changes.at(-1), 1, 'volume remains bounded');
   voice.close();
   assert.ok(worklet.closed && worklet.disconnected);
 });
@@ -689,4 +692,48 @@ test('browser completes a Google lookup on the data channel and displays the ret
   assert.equal(JSON.parse(output.item.output).ok, true);
   assert.equal(f.channel.messages.at(-1).type, 'response.create');
   assert.ok(f.states.some(x => x.text.includes('Google')));
+});
+
+test('personalized startup keeps Google tools, adds explicit memory tools and starts a requested morning message', async t => {
+  const companionStore = { preferences: { duckName: 'Pip', userName: 'Michael', memoryEnabled: true, pitch: 7, volume: 0.4 }, memories: [{ id: 'm1', fact: 'Ik houd van vogels' }] };
+  const f = browserFixture({ companionStore, fetchImpl: async url => url.endsWith('/health')
+    ? Response.json({ ready: true, companionVersion: 1, instructions: profile.instructions, tools: [{ type: 'function', name: 'search_web' }] })
+    : new Response('v=0\r\nanswer') });
+  t.after(() => f.duck.stop());
+  await f.duck.start({ initialText: 'Goedemorgen, vertel het weer.' });
+  f.channel.onopen();
+  const session = f.channel.messages[0].session;
+  assert.match(session.instructions, /Michael/); assert.match(session.instructions, /Ik houd van vogels/);
+  assert.ok(session.tools.some(x => x.name === 'remember_fact'));
+  assert.ok(session.tools.some(x => x.name === 'search_web'));
+  assert.equal(f.duck.voicePitch, 7); assert.equal(f.duck.volume, 0.4);
+  assert.equal(f.channel.messages[1].item.content[0].text, 'Goedemorgen, vertel het weer.');
+  companionStore.preferences.memoryEnabled = false;
+  f.duck.updatePersonalization();
+  const changed = f.channel.messages.at(-1).session;
+  assert.ok(!changed.instructions.includes('Ik houd van vogels'));
+  assert.ok(!changed.tools.some(x => x.name === 'remember_fact'));
+  assert.ok(changed.tools.some(x => x.name === 'search_web'));
+});
+
+test('personalization detects an outdated helper before opening the microphone', async () => {
+  const f = browserFixture({ companionStore: { preferences: {}, memories: [] } });
+  await f.duck.start();
+  assert.match(f.states.at(-1).text, /Werk de gesprekshulp bij/);
+  assert.equal(f.duck.peer, null); assert.equal(f.duck.stream, null);
+});
+
+test('a prepared wake context is reused, Stop closes a late unlock, and photos use input_image only on explicit request', async t => {
+  const f = browserFixture(); t.after(() => f.duck.stop());
+  await f.duck.primeAudio(); assert.equal(f.duck.primedContext, f.context);
+  await f.duck.start(); assert.equal(f.duck.context, f.context); assert.equal(f.duck.primedContext, null);
+  f.duck.ask('Wat zie je?', 'data:image/jpeg;base64,AAAA');
+  assert.equal(f.channel.messages[0].item.content[1].type, 'input_image');
+  assert.throws(() => f.duck.ask('x', 'https://private.example/photo'), /Foto te groot/);
+  assert.throws(() => f.duck.ask('x', 'data:image/jpeg;base64,' + 'A'.repeat(50000)), /Foto te groot/);
+  let resolve, closed = 0;
+  const context = { resume: () => new Promise(r => { resolve = r; }), close: async () => { closed++; } };
+  const g = browserFixture({ makeContext: () => context });
+  const priming = g.duck.primeAudio(); g.duck.stop(); resolve(); await priming;
+  assert.equal(g.duck.primedContext, null); assert.equal(closed, 1);
 });

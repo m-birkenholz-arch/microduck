@@ -44,7 +44,7 @@ export function createConversationServer({
       return;
     }
     if (req.method === 'GET' && req.url === '/health') {
-      reply(200, JSON.stringify({ ready: Boolean(apiKey), model, googleSearch: Boolean(googleKey), searchVersion: 1 }), 'application/json');
+      reply(200, JSON.stringify({ ready: Boolean(apiKey), model, googleSearch: Boolean(googleKey), searchVersion: 1, companionVersion: 1, instructions: profile.instructions + (googleKey ? searchInstructions : ''), tools: googleKey ? [searchTool] : [] }), 'application/json');
       return;
     }
     if (req.method !== 'POST' || !['/session', '/search'].includes(req.url)) {

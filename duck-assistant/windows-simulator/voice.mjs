@@ -8,12 +8,17 @@ export async function createDuckVoice(context, semitones = 5) {
   const output = context.createGain();
   output.gain.value = 0;
   input.connect(output);
+  let muted = true, volume = 1;
+  const apply = () => {
+    output.gain.cancelScheduledValues(context.currentTime);
+    output.gain.setValueAtTime(muted ? 0 : volume, context.currentTime);
+  };
   return {
     input, output,
+    setVolume(value) { volume = Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 1; apply(); },
     setPitch(value) { input.port.postMessage({ type: 'pitch', value }); },
-    setMuted(muted) {
-      output.gain.cancelScheduledValues(context.currentTime);
-      output.gain.setValueAtTime(muted ? 0 : 1, context.currentTime);
+    setMuted(value) {
+      muted = value; apply();
       if (muted) input.port.postMessage({ type: 'reset' });
     },
     close() { input.onprocessorerror = null; input.disconnect(); input.port.close(); output.disconnect(); },

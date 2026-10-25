@@ -24,6 +24,16 @@ export function answerGesture(text, complete = false) {
   return null;
 }
 
+export function expressionGesture(text, complete = false) {
+  const raw = String(text).trim();
+  if (/^["'“‘«>]/u.test(raw) || (!complete && !/[,.;!?\n]/.test(raw))) return null;
+  const clause = raw.split(/[,.;!?\n]/)[0].toLowerCase();
+  if (/\b(?:niet|geen|nooit|misschien|waarschijnlijk)\b/.test(clause)) return null;
+  if (/^(?:wat leuk|wat fijn|geweldig|fantastisch|hoera|leuk idee)\b/.test(clause)) return 'happy';
+  if (/^(?:wat vind jij|wat denk jij|hoe kijk jij|vertel eens|ben je benieuwd)\b/.test(clause)) return 'curious';
+  return null;
+}
+
 export class AnswerGestureCue {
   constructor(emit = () => {}) { this.emit = emit; this.reset(); }
   reset() {
@@ -63,7 +73,7 @@ export class AnswerGestureCue {
       if (!entry || entry.emitted) return;
       const done = event.type.endsWith('.done');
       entry.text = (done ? event.transcript || entry.text : entry.text + (event.delta || '')).slice(0, 512);
-      entry.gesture = answerGesture(entry.text, done);
+      entry.gesture = answerGesture(entry.text, done) || expressionGesture(entry.text, done);
       this.flush();
     } else if (event.type === 'output_audio_buffer.started') {
       if (!this.entry(id)) return;

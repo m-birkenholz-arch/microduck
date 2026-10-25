@@ -1,5 +1,19 @@
-param([switch]$GoogleSearch)
+param([switch]$GoogleSearch, [switch]$RestartHelper)
 $ErrorActionPreference = 'Stop'
+# Check before asking for keys; optionally replace only this simulator's helper.
+$duckListeners = @(Get-NetTCPConnection -LocalPort 8787 -State Listen -ErrorAction SilentlyContinue)
+if ($duckListeners.Count -gt 0) {
+    if (-not $RestartHelper) { throw 'Poort 8787 is bezet. Sluit de oude gesprekshulp of start met -RestartHelper.' }
+    foreach ($duckProcessId in ($duckListeners | Select-Object -ExpandProperty OwningProcess -Unique)) {
+        $duckProcess = Get-CimInstance Win32_Process -Filter "ProcessId = $duckProcessId"
+        if ($duckProcess.Name -ne 'node.exe' -or $duckProcess.CommandLine -notlike '*duck-conversation-tools*server.mjs*') {
+            throw 'Poort 8787 hoort niet bij de herkenbare Microduck-gesprekshulp. Dit proces wordt niet gestopt.'
+        }
+        Stop-Process -Id $duckProcessId -ErrorAction Stop
+    }
+    Start-Sleep -Milliseconds 300
+    if (Get-NetTCPConnection -LocalPort 8787 -State Listen -ErrorAction SilentlyContinue) { throw 'Poort 8787 is nog bezet. Probeer opnieuw.' }
+}
 $previousKey = $env:OPENAI_API_KEY
 $previousGoogleKey = $env:GOOGLE_API_KEY
 try {

@@ -539,3 +539,79 @@ to Google cannot be recalled. Successful tool results produce the existing singl
 spoken response and retain voice settings, motion, face recognition and playback.
 
 Reference: [Gemini inline image inputs](https://ai.google.dev/gemini-api/docs/generate-content/image-understanding).
+
+
+### Optional local biometric speaker recognition (Windows simulator)
+
+`install.ps1 -SpeakerRecognition` runs `speaker-setup.mjs`. A private
+`speaker-runtime` directory receives a pinned `sherpa-onnx-node` 1.13.8 package
+with matching native package overrides, and the WeSpeaker English VoxCeleb
+ResNet34-LM model. The installer and helper validate the model size/hash documented
+in `speaker-notices.md`. The model, native binaries, audio and user profiles are
+not committed to the repository. Python and cloud inference are not used.
+The helper discovers the installed runtime on ordinary startup. `/health` reports
+`speakerRecognition`; missing/invalid model or failed worker startup disables
+only speaker recognition. Native inference runs in a worker thread with two CPU
+threads, one request at a time; concurrent requests fail rather than queue. Worker
+startup is bounded, worker failure marks it unavailable, and helper shutdown
+terminates it. This first Windows target is x64 (Windows ARM is not validated).
+
+`POST /speaker/embed` shares the existing exact loopback Host and Origin checks.
+It accepts only JSON with `sampleRate: 16000` and a bounded base64 little-endian
+PCM16 string for two to twelve seconds of mono audio, with a 513,000-byte body
+limit. It has no cloud call and does not persist/log audio. A 12-second inference
+deadline and a client disconnect invalidate results. A running native operation
+finishes in the isolated worker, retaining the busy slot until completion; late
+results cannot update the client. At least 1.5 seconds of 20 ms frames with RMS
+>=0.012 is required before extracting a 256-number vector. This is an energy
+quality heuristic, not proof of speech, isolation, or liveness.
+
+`SpeakerGallery` stores up to five profiles under separate plaintext localStorage
+key `microduck.speakers.v1`, engine `wespeaker-en-v1`: opaque ID, a name of at most
+60 characters, and three normalized 256-number embeddings. Saving is transactional.
+Enrollment is an explicit checkbox plus button action, stops the conversation and
+records three six-second clips serially with a temporary microphone and context.
+Each clip is released after extraction; cancellation, revocation, hidden tab,
+Stop all and late permission results release tracks and discard partial profiles.
+Enrollment requires pairwise cosine >=0.80 and rejects duplicate names/matching
+voices. There is no automatic enrollment. Profiles and recognition/name-sharing
+consent are independent: consent defaults off and resets on Stop all/reload.
+Deleting profiles disables recognition and discards pending results.
+
+`speaker-worklet.mjs` taps the existing echo-cancelled conversation microphone
+only after recognition is enabled, averages/downsamples to 16 kHz PCM and emits
+100 ms chunks. Its output is silence, so it never monitors the user's microphone
+through the speaker. The tap neither requests another conversation microphone nor
+modifies WebRTC capture, RobotAudio or existing voice-output/motion graphs.
+An in-memory ring holds at most twelve seconds; input VAD marks each turn with a
+300 ms pre-roll. Speech stop triggers one local embedding request if at least two
+seconds are available. New speech, disable, Stop or context replacement aborts
+old work, clears the current identity and generation-guards pending tap setup.
+Raw buffer contents are overwritten/cleared, never saved as recordings. Normal
+conversation audio still travels to OpenAI as before; local identification adds
+no third-party audio upload.
+
+Voice matching uses mean cosine against the three enrollment vectors, threshold
+0.82 and margin >=0.10 against the next profile. Unknown, ambiguous, invalid or
+<2-second turns return no name. A match expires after fifteen seconds or at the
+next speech start. `get_speaker_status` waits for current-turn local analysis;
+the existing tool batch sends one spoken response after its result. Only the
+possible name and enabled/experimental flags reach Realtime, never embeddings or
+PCM. The model is instructed to omit uncertain names and avoid repeated
+recognition explanations. With voice recognition active it uses this status for
+speaker identity rather than requiring a camera-status call first. The panel
+withholds a voice name when it conflicts with a current, explicitly shared
+mouth-motion speaker hint. Face recognition continues independently.
+
+These cosine thresholds are conservative heuristics, not calibrated probabilities.
+The model was trained on English VoxCeleb data; Dutch household performance is
+unvalidated. Noise, replayed/imitated voices, short utterances, microphone changes
+and overlapping speech can defeat matching; there is no anti-spoofing or reliable
+speaker-separation claim. CPU smoke validation uses upstream labelled English
+fixtures (two utterances of one speaker and a different speaker), checks separation
+at the chosen threshold and silence rejection. It does not establish accuracy
+on the user's Windows microphone or Dutch conversations.
+
+References: [sherpa speaker identification](https://k2-fsa.github.io/sherpa/onnx/speaker-identification/index.html),
+[official Node example](https://github.com/k2-fsa/sherpa-onnx/blob/master/nodejs-addon-examples/test_speaker_identification.js),
+[WeSpeaker pretrained model licenses](https://github.com/wenet-e2e/wespeaker/blob/master/docs/pretrained.md).

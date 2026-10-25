@@ -1,0 +1,14 @@
+{
+  "name": "microduck-local-speaker",
+  "private": true,
+  "version": "1.0.0",
+  "dependencies": { "sherpa-onnx-node": "1.13.8" },
+  "overrides": {
+    "sherpa-onnx-linux-x64": "1.13.8",
+    "sherpa-onnx-linux-arm64": "1.13.8",
+    "sherpa-onnx-win-x64": "1.13.8",
+    "sherpa-onnx-win-ia32": "1.13.8",
+    "sherpa-onnx-darwin-x64": "1.13.8",
+    "sherpa-onnx-darwin-arm64": "1.13.8"
+  }
+}

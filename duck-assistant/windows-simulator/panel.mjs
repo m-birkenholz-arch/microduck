@@ -1,3 +1,4 @@
+import { mountSpeakerPanel } from './speaker-panel.mjs';
 import { mountFacePanel } from './face-panel.mjs';
 import { CompanionStore, morningPrompt } from './companion.mjs';
 import { WakeWord } from './wake.mjs';
@@ -31,7 +32,7 @@ root.innerHTML = `
  <h2 id="title">Praat met Duck</h2>
  <p class="hint">Nederlands gesprek · gebruik bij voorkeur een koptelefoon</p>
  <div class="actions"><button id="start">Start gesprek</button><button id="stop" disabled>Stop alles</button></div>
- <div class="actions"><button id="camera-open">Camera testen</button><button id="morning">Goedemorgen</button><button id="homework">Help met huiswerk</button><button id="standby">Wacht op hé Duck</button></div>
+ <div class="actions"><button id="camera-open">Camera testen</button><button id="speaker-open">Stem herkennen</button><button id="morning">Goedemorgen</button><button id="homework">Help met huiswerk</button><button id="standby">Wacht op hé Duck</button></div>
  <p id="wake-state" class="hint">Wekwoord uit</p>
  <p class="hint">Wekwoord gebruikt browser-spraakherkenning, mogelijk online. Microfoon blijft daarvoor aan tot Stop alles, tab verbergen of sluiten.</p>
  <p id="status" role="status" aria-live="polite">Klaar om te praten</p>
@@ -76,18 +77,28 @@ root.innerHTML = `
 </section>`;
 const start = root.querySelector('#start');
 const stop = root.querySelector('#stop');
-let wake, facePanel;
+let wake, facePanel, speakerPanel;
 const conversation = new DuckConversation({
   companionStore: store,
   cameraStatus: () => facePanel?.camera.status() || { camera_active: false },
-  onSpeechActivity(active) { facePanel?.camera.setSpeechActive(active); },
+  onSpeechActivity(active) { facePanel?.camera.setSpeechActive(active); speakerPanel?.speaker.speech(active); },
+  onMicrophone(context, stream) { return speakerPanel?.speaker.attach(context, stream); },
+  onMicrophoneStop() { speakerPanel?.speaker.detach(); },
+  speakerEnabled: () => Boolean(speakerPanel?.speaker.enabled),
+  async speakerStatus() {
+    const voice = await speakerPanel?.speaker.status() || { enabled: false, possible_speaker_name: null };
+    const camera = facePanel?.camera.status();
+    if (voice.possible_speaker_name && camera?.possible_speaker_name && voice.possible_speaker_name.toLowerCase() !== camera.possible_speaker_name.toLowerCase()) return { ...voice, possible_speaker_name: null, conflicting_cues: true };
+    return voice;
+  },
   captureImage: () => facePanel.capture(),
   onVisionResult(result) { if (result) notice(result.text); },
   onMemoryChanged() { renderMemories(); conversation.updatePersonalization(); },
   onStatus(message, active) {
+    if (message === 'Verbinden…') speakerPanel?.cancelEnrollment();
     root.querySelector('#status').textContent = message;
     start.disabled = active;
-    stop.disabled = !active && !wake?.enabled && !facePanel?.camera.active;
+    stop.disabled = !active && !wake?.enabled && !facePanel?.camera.active && !speakerPanel?.busy;
     if (active) { wake?.pause(); if (wake?.enabled) root.querySelector('#wake-state').textContent = 'Wekwoord gepauzeerd tijdens gesprek'; }
   },
   onSearchReady(ready) { root.querySelector('#search-state').textContent = ready ? 'Google Search ingeschakeld' : 'Google uit — start de gesprekshulp met een Google API-key'; },
@@ -159,7 +170,7 @@ function applySettings(updateForm = true) {
 }
 let arming = 0;
 function stopAll(reason) {
-  arming++; wake?.disable(); facePanel?.camera.stop(typeof reason === 'string' ? reason : undefined); conversation.stop();
+  arming++; wake?.disable(); speakerPanel?.stop(); facePanel?.camera.stop(typeof reason === 'string' ? reason : undefined); conversation.stop();
   $('#photo-preview').hidden = true; $('#photo-preview').removeAttribute('src');
 }
 wake = new WakeWord({
@@ -167,7 +178,7 @@ wake = new WakeWord({
   onWake({ remainder }) {
     void conversation.start({ initialText: remainder || 'Ik roep je bij je naam. Reageer heel kort dat je luistert.' });
   },
-  onState(message) { $('#wake-state').textContent = message; stop.disabled = !wake?.enabled && !conversation.controller && !facePanel?.camera.active; },
+  onState(message) { $('#wake-state').textContent = message; stop.disabled = !wake?.enabled && !conversation.controller && !facePanel?.camera.active && !speakerPanel?.busy; },
 });
 $('#standby').addEventListener('click', async () => {
   const attempt = ++arming;
@@ -234,10 +245,15 @@ facePanel = mountFacePanel({ container: root.querySelector('section'), storage, 
     if (conversation.channel?.readyState === 'open') conversation.ask(text);
     else { arming++; wake.pause(); void conversation.start({ initialText: text }); }
   },
-  onActivity() { stop.disabled = !wake?.enabled && !conversation.controller && !facePanel?.camera.active; },
+  onActivity() { stop.disabled = !wake?.enabled && !conversation.controller && !facePanel?.camera.active && !speakerPanel?.busy; },
   onGreet() { arming++; wake.pause(); void conversation.start({ initialText: 'Gebruik get_camera_status voor de lokale camerastatus. Begroet me in één korte zin, met de mogelijke naam als die beschikbaar is. Zonder naam zeg je alleen “Hallo, fijn dat je er bent!” Vraag niet standaard om bevestiging en geef geen uitleg over herkenning.' }); },
 });
+speakerPanel = mountSpeakerPanel({ container: root.querySelector('section'), storage, defaultName: store.preferences.userName,
+  beforeEnroll: stopAll, getMicrophone: () => ({ context: conversation.context, stream: conversation.stream }),
+  onChange() { stop.disabled = !conversation.controller && !wake?.enabled && !facePanel?.camera.active && !speakerPanel?.busy; conversation.updateCameraContext(); },
+});
 $('#camera-open').addEventListener('click', () => facePanel.open());
+$('#speaker-open').addEventListener('click', () => speakerPanel.open());
 applySettings();
 if (store.loadError || store.loadNotice) notice(store.loadError || store.loadNotice);
 // Keep UI events away from the simulator's keyboard/gamepad gesture handlers.
@@ -249,6 +265,6 @@ stop.addEventListener('click', stopAll);
 document.body.append(host);
 const hide = () => { if (document.hidden) stopAll('Camera gestopt omdat de simulatortab verborgen is. Houd de simulatortab zichtbaar en klik opnieuw op Camera starten.'); };
 document.addEventListener('visibilitychange', hide);
-const cleanup = () => { stopAll(); facePanel?.dispose(); document.removeEventListener('visibilitychange', hide); host.remove(); };
+const cleanup = () => { stopAll(); facePanel?.dispose(); speakerPanel?.dispose(); document.removeEventListener('visibilitychange', hide); host.remove(); };
 window.addEventListener('pagehide', cleanup, { once: true });
 if (import.meta.hot) import.meta.hot.dispose(cleanup);

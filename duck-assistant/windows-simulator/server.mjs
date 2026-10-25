@@ -1,5 +1,6 @@
 // Loopback-only SDP exchange and Google lookup; keys never enter the browser or Vite.
 import http from 'node:http';
+import { createSpeakerBackend, SpeakerError } from './speaker-backend.mjs';
 import { googleVision } from './vision-google.mjs';
 import { validVisionRequest } from './vision.mjs';
 import { googleSearch, DEFAULT_SEARCH_MODEL, GoogleSearchError } from './search-google.mjs';
@@ -15,11 +16,12 @@ export function createConversationServer({
   fetchImpl = fetch,
   googleKey = process.env.GOOGLE_API_KEY?.trim() || process.env.GEMINI_API_KEY?.trim(),
   googleModel = process.env.DUCK_GOOGLE_MODEL || DEFAULT_SEARCH_MODEL,
+  speakerBackend = createSpeakerBackend(),
   origins = ['http://localhost:5173', 'http://127.0.0.1:5173'],
 } = {}) {
   let activeSearch = false;
   const searches = [];
-  return http.createServer(async (req, res) => {
+  const server = http.createServer(async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('X-Content-Type-Options', 'nosniff');
     const reply = (status, body, type = 'text/plain; charset=utf-8') => {
@@ -46,7 +48,24 @@ export function createConversationServer({
       return;
     }
     if (req.method === 'GET' && req.url === '/health') {
-      reply(200, JSON.stringify({ ready: Boolean(apiKey), model, googleSearch: Boolean(googleKey), googleVision: Boolean(googleKey), searchVersion: 1, companionVersion: 1, instructions: profile.instructions + (googleKey ? searchInstructions : ''), tools: googleKey ? [searchTool] : [] }), 'application/json');
+      reply(200, JSON.stringify({ ready: Boolean(apiKey), model, googleSearch: Boolean(googleKey), googleVision: Boolean(googleKey), speakerRecognition: Boolean(await speakerBackend?.available()), searchVersion: 1, companionVersion: 1, instructions: profile.instructions + (googleKey ? searchInstructions : ''), tools: googleKey ? [searchTool] : [] }), 'application/json');
+      return;
+    }
+    if (req.method === 'POST' && req.url === '/speaker/embed') {
+      if (!speakerBackend || !await speakerBackend.available()) { reply(503, 'Stemmodel ontbreekt. Installeer met -SpeakerRecognition.'); return; }
+      if (req.headers['content-type']?.split(';')[0] !== 'application/json') { reply(415, 'JSON-stemopname verwacht.'); return; }
+      const controller = new AbortController(); res.on('close', () => controller.abort());
+      try {
+        const chunks = []; let bytes = 0;
+        for await (const chunk of req) {
+          bytes += chunk.length; if (bytes > 513000) { reply(413, 'Stemopname te groot.'); return; } chunks.push(chunk);
+        }
+        let value; try { value = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { reply(400, 'Ongeldige stemopname.'); return; }
+        const result = await speakerBackend.embed(value, AbortSignal.any([controller.signal, AbortSignal.timeout(12000)]));
+        if (!res.destroyed) reply(200, JSON.stringify(result), 'application/json');
+      } catch (error) {
+        if (!res.destroyed) reply(400, error instanceof SpeakerError ? error.message : 'Lokale stemanalyse mislukt. Probeer opnieuw.');
+      }
       return;
     }
     if (req.method !== 'POST' || !['/session', '/search', '/vision'].includes(req.url)) {
@@ -140,6 +159,8 @@ export function createConversationServer({
       if (!res.writableEnded) reply(502, 'OpenAI is niet bereikbaar of de verbinding duurde te lang. Probeer opnieuw.');
     }
   });
+  server.on('close', () => speakerBackend?.close());
+  return server;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

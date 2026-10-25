@@ -3,7 +3,8 @@ param(
     [string]$Ref = 'feature/conversation',
     [switch]$GoogleSearch,
     [switch]$RestartHelper,
-    [switch]$FaceCamera
+    [switch]$FaceCamera,
+    [switch]$SpeakerRecognition
 )
 $ErrorActionPreference = 'Stop'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
@@ -23,8 +24,13 @@ if ($Ref -notmatch '^[a-f0-9]{40}$') { throw 'Kon de installatieversie niet bepa
 $tools = Join-Path $SimulatorPath 'duck-conversation-tools'
 New-Item -ItemType Directory -Force -Path $tools | Out-Null
 $base = "https://raw.githubusercontent.com/m-birkenholz-arch/microduck/$Ref/duck-assistant/windows-simulator"
-foreach ($name in @('server.mjs', 'search-google.mjs', 'vision-google.mjs', 'vision.mjs', 'session.json', 'client.mjs', 'panel.mjs', 'mouth.mjs', 'motion.mjs', 'gestures.mjs', 'voice.mjs', 'voice-worklet.mjs', 'search-tools.mjs', 'companion.mjs', 'wake.mjs', 'photo.mjs', 'face-local.mjs', 'face-engine.mjs', 'face-panel.mjs', 'face-assets.mjs', 'face-assets.json', 'install.mjs', 'start.ps1')) {
+foreach ($name in @('speaker-local.mjs', 'speaker-panel.mjs', 'speaker-worklet.mjs', 'speaker-worker.mjs', 'speaker-backend.mjs', 'speaker-setup.mjs', 'speaker-package.json', 'speaker-notices.md', 'server.mjs', 'search-google.mjs', 'vision-google.mjs', 'vision.mjs', 'session.json', 'client.mjs', 'panel.mjs', 'mouth.mjs', 'motion.mjs', 'gestures.mjs', 'voice.mjs', 'voice-worklet.mjs', 'search-tools.mjs', 'companion.mjs', 'wake.mjs', 'photo.mjs', 'face-local.mjs', 'face-engine.mjs', 'face-panel.mjs', 'face-assets.mjs', 'face-assets.json', 'install.mjs', 'start.ps1')) {
     Invoke-WebRequest -UseBasicParsing -Uri "$base/$name" -OutFile (Join-Path $tools $name)
+}
+if ($SpeakerRecognition) {
+    Write-Host 'Lokaal stemmodel en herkenningspakket installeren...'
+    & $node.Source (Join-Path $tools 'speaker-setup.mjs')
+    if ($LASTEXITCODE -ne 0) { throw 'Stemherkenning installeren mislukt. Zie de fout hierboven.' }
 }
 if ($FaceCamera) {
     Write-Host 'Lokale gezichtsmodellen installeren (ongeveer 8 MB, geen API-key nodig)...'

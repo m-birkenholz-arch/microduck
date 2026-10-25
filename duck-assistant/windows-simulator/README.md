@@ -257,6 +257,43 @@ niet aangesloten. Test nu eerst je laptopcamera in Chrome of Edge op localhost.
 Als openen niet lukt: controleer cameratoestemming in de browser en Windows en
 sluit eventueel andere camera-apps.
 
+### Herkennen aan je stem
+
+Installeer de update met `-SpeakerRecognition -GoogleSearch -RestartHelper`.
+Dit downloadt een lokaal stemmodel (27 MB) en een Node.js-herkenningspakket.
+Python en een extra API-key zijn niet nodig. De eerste versie is gericht op
+Windows 11 x64 met Node.js 22+. De gesprekshulp moet na installatie opnieuw worden
+gestart. Een latere gewone start via `start.ps1 -GoogleSearch -RestartHelper`
+laadt het al geïnstalleerde stemmodel automatisch.
+
+1. Klik **Stem herkennen** om **Herkennen aan je stem** te openen.
+2. Vul je naam in en vink **Ik wil deze stem lokaal aanleren en bewaren** aan.
+3. Klik **Leer mijn stem**. Praat drie keer ongeveer zes seconden over je dag en
+   volg de melding bij elke opname. Het gesprek stopt tijdens het aanleren.
+4. Na **Stemprofiel bewaard** vink je **Herken mijn stem en laat Duck mijn naam
+   gebruiken** aan en klik je **Start gesprek**.
+5. Spreek enkele seconden. Een mogelijke naam verschijnt in het paneel en kan
+   door Duck worden gebruikt; bij korte spraak of twijfel blijft de naam weg.
+
+De drie opnames gaan alleen naar de lokale gesprekshulp voor de analyse en worden
+niet als audiobestand bewaard. Alleen je naam en drie numerieke stemmetingen
+staan in deze browseropslag, apart van geheugen en gezichten. Tijdens herkenning
+worden maximaal twaalf seconden microfoonaudio tijdelijk in RAM gehouden. De
+gewone gespreksaudio gaat zoals eerder via OpenAI; stemherkenning voegt geen
+extra audio-upload naar Google of een andere clouddienst toe. Alleen een mogelijke
+naam komt via een statusfunctie bij de gesprekshulp terecht.
+
+**Opname stoppen**, het intrekken van toestemming en **Stop alles** breken
+opnames/herkenning af. Na Stop alles of herladen moet je herkenning opnieuw
+inschakelen; stemprofielen blijven bewaard. Je kunt profielen afzonderlijk
+verwijderen of **Wis alle stemprofielen** gebruiken. Wie al een naam in een
+lopend gesprek heeft gedeeld, wist daarmee geen eerdere gespreksgeschiedenis.
+
+De herkenning is een proef, geen toegangsbeveiliging. Het model is getraind op
+Engelstalige data; Nederlands en jouw microfoon moeten in de praktijk worden
+getest. Andere stemmen, ruis, opnames en tegelijk praten kunnen de uitkomst
+beïnvloeden. Bij strijdige camera- en stemaanwijzingen laat Duck de naam weg.
+
 ### Laat Duck bekijken wat je laat zien
 
 Dit gebruikt **Google Gemini beeldanalyse**, via dezelfde Google AI Studio-key als
@@ -349,7 +386,7 @@ API-tegoed en modeltoegang hebben.
 Vanuit de root van de robotrepository:
 
 ```sh
-node --test duck-assistant/windows-simulator/conversation.test.mjs duck-assistant/windows-simulator/search.test.mjs duck-assistant/windows-simulator/companion.test.mjs duck-assistant/windows-simulator/face.test.mjs duck-assistant/windows-simulator/vision.test.mjs
+node --test duck-assistant/windows-simulator/conversation.test.mjs duck-assistant/windows-simulator/search.test.mjs duck-assistant/windows-simulator/companion.test.mjs duck-assistant/windows-simulator/face.test.mjs duck-assistant/windows-simulator/vision.test.mjs duck-assistant/windows-simulator/speaker.test.mjs
 node duck-assistant/windows-simulator/install.mjs /pad/naar/microduck-simulator
 ```
 

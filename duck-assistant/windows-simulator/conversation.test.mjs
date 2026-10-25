@@ -807,3 +807,28 @@ test('Google vision is discovered at startup and a spoken visual request returns
   assert.ok(!JSON.stringify(f.channel.messages).includes('base64'));
   assert.equal(f.channel.messages.at(-1).type, 'response.create');
 });
+
+test('local speaker tool waits for the current voice result, preserves existing tools and releases the microphone tap on Stop', async t => {
+  let resolveSpeaker, starts = 0, stops = 0, enabled = true;
+  const f = browserFixture({ companionStore: { preferences: { memoryEnabled: true }, memories: [] },
+    cameraStatus: () => ({ camera_active: true, name_sharing: true }),
+    speakerEnabled: () => enabled,
+    speakerStatus: () => new Promise(resolve => { resolveSpeaker = resolve; }),
+    onMicrophone: () => { starts++; }, onMicrophoneStop: () => { stops++; },
+    fetchImpl: async url => url.endsWith('/health') ? Response.json({ ready: true, companionVersion: 1, instructions: profile.instructions, speakerRecognition: true, tools: [{ name: 'search_web' }] }) : new Response('v=0\r\nanswer') });
+  t.after(() => f.duck.stop()); await f.duck.start(); f.channel.onopen();
+  assert.equal(starts, 1);
+  const session = f.channel.messages[0].session;
+  for (const tool of ['search_web', 'get_camera_status', 'remember_fact', 'get_speaker_status']) assert.ok(session.tools.some(t => t.name === tool));
+  assert.match(session.instructions, /Stemherkenning is actief: gebruik get_speaker_status/);
+  assert.match(session.instructions, /één tot drie korte zinnen/);
+  f.channel.onmessage({ data: JSON.stringify({ type: 'response.done', response: { id: 'voice-turn', status: 'completed', output: [
+    { type: 'function_call', name: 'get_speaker_status', call_id: 'voice-name', arguments: '{}' },
+  ] } }) });
+  assert.equal(f.channel.messages.filter(event => event.type === 'response.create').length, 0, 'wait for local inference before answering');
+  resolveSpeaker({ enabled: true, possible_speaker_name: 'Michael' }); await new Promise(resolve => setTimeout(resolve, 0));
+  const result = JSON.parse(f.channel.messages.find(event => event.item?.call_id === 'voice-name').item.output);
+  assert.equal(result.result.possible_speaker_name, 'Michael'); assert.equal(f.channel.messages.at(-1).type, 'response.create');
+  enabled = false; f.duck.updateCameraContext(); assert.match(f.channel.messages.at(-1).session.instructions, /Gebruik geen eerdere stemnaam/);
+  const before = stops; f.duck.stop(); assert.equal(stops, before + 1);
+});

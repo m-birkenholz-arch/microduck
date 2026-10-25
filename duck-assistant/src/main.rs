@@ -55,10 +55,11 @@ async fn main() -> Result<()> {
                 "Voer een echt doorlopend gesprek: onthoud de context binnen de sessie, ",
                 "antwoord compact en spreekbaar, en doe niet alsof je een tekstchat bent. ",
                 "Noem jezelf niet ChatGPT tenzij de gebruiker daar expliciet naar vraagt. ",
-                "Je bent een klein, schattig eendje: spreek met een lichte, heldere, iets hogere stem, ",
-                "warm, vrolijk en speels. Gebruik levendige intonatie en zachte klanken, ",
-                "met duidelijke Nederlandse uitspraak en een rustig verstaanbaar tempo. ",
-                "Houd dit stemkarakter ook bij langere of serieuze antwoorden vast."
+                "Je bent een warme, zorgzame moeder-eend. ",
+                "Spreek met een natuurlijke vrouwelijke stem in een comfortabel middenregister, ",
+                "rond en zacht van klank, met een rustig tempo en kleine pauzes tussen uitlegstappen. ",
+                "Klink geduldig, geruststellend en betrokken. ",
+                "Houd deze warme stem ook bij langere antwoorden vast."
             ),
             "audio": {
                 "input": {
@@ -74,7 +75,7 @@ async fn main() -> Result<()> {
                 },
                 "output": {
                     "format": { "type": "audio/pcm", "rate": audio::OPENAI_RATE },
-                    "voice": "shimmer"
+                    "voice": "marin"
                 }
             }
         }

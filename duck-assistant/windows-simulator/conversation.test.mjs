@@ -38,7 +38,7 @@ test('profile preserves the robot Dutch instructions, model, voice and VAD', asy
   const instructions = [...block.matchAll(/"(?:[^"\\]|\\.)*"/g)].map(x => JSON.parse(x[0])).join('');
   assert.equal(profile.instructions, instructions);
   assert.ok(rust.includes(`const DEFAULT_MODEL: &str = "${profile.model}"`));
-  assert.equal(profile.audio.output.voice, 'shimmer');
+  assert.equal(profile.audio.output.voice, 'marin');
   assert.ok(rust.includes(`"voice": "${profile.audio.output.voice}"`));
   assert.equal(profile.audio.input.turn_detection.interrupt_response, true);
   assert.equal(profile.audio.input.turn_detection.create_response, true);
@@ -584,7 +584,7 @@ test('zero pitch bypasses, extreme controls clamp and sustained DC does not ampl
   assert.deepEqual(output, input);
   shifter.setPitch(100); assert.equal(shifter.semitones, 9);
   shifter.setPitch(-10); assert.equal(shifter.semitones, 0);
-  shifter.setPitch(NaN); assert.equal(shifter.semitones, 5);
+  shifter.setPitch(NaN); assert.equal(shifter.semitones, 0);
   input.fill(0.5);
   shifter.process(input, output);
   assert.ok(output.slice(4000).every(x => Math.abs(x - 0.5) < 1e-6));

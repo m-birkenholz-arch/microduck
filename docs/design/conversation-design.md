@@ -122,8 +122,8 @@ hidden input and restores its previous process environment on exit.
 
 The browser session profile preserves the Rust assistant's model, exact Dutch
 instructions, voice and VAD settings; a test guards instruction drift. Both use
-`shimmer` with Dutch delivery instructions for a light, slightly higher, warm and
-playful duck character. The browser additionally applies the local voice transform
+`marin` with Dutch instructions for a warm maternal female voice in a natural
+mid register, unhurried delivery and small pauses between explanation steps. The browser additionally applies the local voice transform
 described below; the Rust robot currently uses the carrier without this DSP. The helper reads the profile at
 startup, so profile changes require a helper restart and a new conversation. WebRTC
 negotiates its media format, so this mode does not exercise the robot's 24 kHz
@@ -161,6 +161,22 @@ shared. UI deletion or disabling closes the current Realtime session to avoid
 continuing with the old context; it cannot delete provider-held historical data.
 Tool-driven deletion updates the current instructions but previous conversation
 items may still carry that fact until the next session.
+
+The mother-duck update adds `voiceProfile: mother-v1` to sanitized preferences.
+Older profiles switch pitch to zero and personality to `moedereend`, preserving
+names, notes and other preferences. Once the new profile is written, subsequent
+manual pitch/personality changes persist; the migration does not run again.
+Natural `marin` replaces the previous high `shimmer` carrier in both base profiles
+and the browser's initial session update. Saved user names are not renamed.
+The tutoring instructions call for level-appropriate explanations, a focused
+question about the task when needed, hints and small steps, worked examples on
+request, checked calculations and neutral correction. They guide model behavior,
+not a programmatic guarantee of educational quality or vocal timbre. A homework
+button starts a new session and persists homework mode; photo input can carry an
+exercise with explicit instructions to ask about illegible text rather than guess.
+Google remains available for factual verification without forcing a lookup for
+every routine arithmetic or language exercise. Live listening/tutoring validation
+is required; Rust changes here are voice/instruction string edits only.
 
 The helper advertises baseline instructions and Google tool declarations in
 `/health` with `companionVersion: 1`, never keys. The browser appends personality
@@ -260,8 +276,9 @@ gain, the existing jaw/gesture analyser and the AudioContext destination. The
 HTML audio sink has volume zero, so the unprocessed carrier is never doubled
 with the duck voice. Two Hann-crossfaded variable-delay heads resample short
 windows, raising pitch and formants together while producing exactly one output
-sample per incoming sample. Default +5 semitones, adjustable 0..9 live; zero
-bypasses the shifter. Delay spans 8..68 ms. This is an initial cartoon effect,
+sample per incoming sample. The mother-duck profile defaults to 0 semitones
+(bypass), adjustable 0..9 live. This removes the high cartoon shift and its
+granular artifacts from the default voice. Delay spans 8..68 ms. This is an initial cartoon effect,
 not formant-preserving or studio-quality speech processing; listening validation
 is still needed for intelligibility, timbre and possible granular artifacts.
 
@@ -270,7 +287,7 @@ short delay buffer. Stop disconnects the graph, closes the worklet port and
 AudioContext, and releases the microphone as before. The meter sees transformed
 audio, preserving jaw motion and audible-answer gesture gating. Installers ship
 both voice modules; Vite bundles the worklet URL as a module asset (inlined for small modules).
-The data-channel open handler sets `shimmer` before output audio, allowing this
+The data-channel open handler sets `marin` before output audio, allowing this
 browser update to work with a helper still holding the previous profile. No extra
 provider call, package dependency, changed speech tempo or response-length queue
 is introduced. This browser DSP is not yet the seed-derived robot personality

@@ -165,3 +165,30 @@ test('memory and Google can both finish in one turn with only one answer continu
   assert.equal(sent.filter(x => x.type === 'response.create').length, 1);
   assert.equal(sent.filter(x => x.type === 'conversation.item.create').length, 2);
 });
+
+test('mother voice migration removes the old high pitch once, preserving names, memories and other settings', () => {
+  const storage = storageFixture();
+  storage.setItem(STORAGE_KEY, JSON.stringify({ version: 1, preferences: {
+    duckName: 'Pippin', userName: 'Michael', place: 'Utrecht', pitch: 7, volume: 0.4, strength: 2, personality: 'speels',
+  }, memories: [{ id: 'm', fact: 'Ik houd van vogels' }] }));
+  const migrated = new CompanionStore(storage);
+  assert.equal(migrated.preferences.pitch, 0); assert.equal(migrated.preferences.personality, 'moedereend');
+  assert.equal(migrated.preferences.duckName, 'Pippin'); assert.equal(migrated.preferences.place, 'Utrecht');
+  assert.equal(migrated.preferences.volume, 0.4); assert.equal(migrated.preferences.strength, 2);
+  assert.equal(migrated.memories[0].fact, 'Ik houd van vogels'); assert.ok(migrated.loadNotice);
+  assert.equal(JSON.parse(storage.getItem(STORAGE_KEY)).preferences.voiceProfile, 'mother-v1');
+  assert.equal(new CompanionStore(storage).loadNotice, '');
+  migrated.update({ pitch: 2, personality: 'rustig' });
+  const reloaded = new CompanionStore(storage);
+  assert.equal(reloaded.preferences.pitch, 2); assert.equal(reloaded.preferences.personality, 'rustig');
+  assert.equal(reloaded.loadNotice, ''); assert.equal(reloaded.memories.length, 1);
+});
+
+test('mother profile keeps homework mode and includes level-aware hints, examples and uncertainty without losing personal context', () => {
+  const p = cleanPreferences({ mode: 'huiswerk', duckName: 'Pip' });
+  assert.equal(p.personality, 'moedereend'); assert.equal(p.pitch, 0); assert.equal(p.mode, 'huiswerk');
+  const prompt = companionInstructions(p, [{ id: 'm', fact: 'Ik houd van vogels' }]);
+  assert.match(prompt, /moeder-eend/); assert.match(prompt, /schoolniveau/); assert.match(prompt, /hint/);
+  assert.match(prompt, /uitgewerkt voorbeeld/); assert.match(prompt, /Controleer berekeningen/);
+  assert.match(prompt, /onleesbaar/); assert.match(prompt, /Ik houd van vogels/);
+});

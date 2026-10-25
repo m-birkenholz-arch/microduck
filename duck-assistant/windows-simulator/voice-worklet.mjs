@@ -1,7 +1,7 @@
 // Two crossfaded variable-delay read heads raise pitch and formants together.
 // Output keeps the input's duration: no accumulated playback backlog or speedup.
 export class DuckPitchShifter {
-  constructor(rate, semitones = 5) {
+  constructor(rate, semitones = 0) {
     this.span = Math.round(rate * 0.060);
     this.minimum = Math.round(rate * 0.008);
     this.buffer = new Float32Array(this.span + this.minimum + 4);
@@ -9,7 +9,7 @@ export class DuckPitchShifter {
     this.reset();
   }
   setPitch(value) {
-    this.semitones = Number.isFinite(value) ? Math.max(0, Math.min(9, value)) : 5;
+    this.semitones = Number.isFinite(value) ? Math.max(0, Math.min(9, value)) : 0;
     this.ratio = 2 ** (this.semitones / 12);
   }
   reset() { this.buffer.fill(0); this.write = 0; this.phase = 0; }

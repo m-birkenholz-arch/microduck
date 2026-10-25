@@ -18,7 +18,7 @@ export class DuckConversation {
   } = {}) {
     Object.assign(this, { onStatus, onText, onLevel, onPhase, mediaDevices, makePeer, makeAudio, makeContext, makeVoice, fetchImpl, onSearchReady, onSearchResult, companionStore, onMemoryChanged });
     this.generation = 0;
-    this.voicePitch = companionStore?.preferences.pitch ?? 5;
+    this.voicePitch = companionStore?.preferences.pitch ?? 0;
     this.volume = companionStore?.preferences.volume ?? 1;
     this.gestureCue = new AnswerGestureCue(onGesture);
   }
@@ -119,12 +119,12 @@ export class DuckConversation {
           // Choose before any output audio, including when an older helper is
           // still running. A browser-only update need not ask for the key again.
           channel.send(JSON.stringify({ type: 'session.update', session: {
-            type: 'realtime', audio: { output: { voice: 'shimmer' } },
+            type: 'realtime', audio: { output: { voice: 'marin' } },
             ...this.personalization(),
           } }));
           this.onPhase('listening'); this.onStatus('Verbonden — praat maar', true);
           if (initialText || initialImage) {
-            try { this.ask(initialText || 'Wat zie je op deze natuurfoto?', initialImage); }
+            try { this.ask(initialText || 'Wat zie je op deze foto?', initialImage); }
             catch (error) { this.fail(error.message); }
           }
         }
@@ -228,7 +228,7 @@ export class DuckConversation {
   }
 
   setVoicePitch(value) {
-    this.voicePitch = Number.isFinite(value) ? Math.max(0, Math.min(9, value)) : 5;
+    this.voicePitch = Number.isFinite(value) ? Math.max(0, Math.min(9, value)) : 0;
     this.voice?.setPitch(this.voicePitch);
   }
 

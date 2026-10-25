@@ -74,16 +74,35 @@ antwoord te schudden. De lichaamsbeweging en spraak blijven daarbij doorlopen.
 De microfoon blijft open zolang het gesprek actief is. Een nieuw gestart gesprek
 begint met een lege sessie. Google Search is optioneel beschikbaar zoals hieronder beschreven.
 
-De basisstem is `shimmer`. In de browser maakt een lokale stemvervorming de
-toonhoogte en klank hoger zonder het spreektempo te verhogen. **Eendenstem**
-staat standaard op 5 halve tonen hoger; met de schuif kies je direct tussen
-0 (basisstem) en 9 (extra klein en hoog), ook tijdens een gesprek. De instelling
-wordt samen met volume, bewegingen en persoonlijkheid lokaal in deze browser bewaard. De verwerking voegt maximaal
-ongeveer 68 ms vertraging toe en kan een licht korrelige klank geven. Test op je
-laptop wat schattig én verstaanbaar klinkt. Er worden geen extra API-aanroepen gedaan.
-Na een update van `session.json` moet je de hulpserver opnieuw starten en een nieuw
-gesprek beginnen. De lokale stemvervorming geldt voor de browsersimulator; op de
-fysieke robot wordt deze nog niet toegepast.
+De basisstem is nu `marin`, met een warme, natuurlijke vrouwelijke stem en
+rustige spreekinstructies voor een **moeder-eend**. **Stemhoogte** begint op 0:
+geen hoge stemvervorming, zodat de natuurlijke klank behouden blijft. De schuif
+0..9 blijft beschikbaar als je haar wat hoger wilt laten klinken. Bij deze update
+worden de oude hoge stemstand en het karakter eenmalig naar 0 en Moeder-eend
+omgezet; naam, herinneringen en overige instellingen blijven behouden. Latere
+handmatige aanpassingen worden zoals gewoonlijk bewaard.
+
+Onder **Karakter** staat **Warme moeder-eend**. Zij krijgt instructies om geduldig
+te adviseren en uit te leggen, met eenvoudige taal en kleine pauzes. Bij huiswerk
+helpt zij ontdekken waar iemand vastloopt, geeft een hint of één stap tegelijk
+en gebruikt voorbeelden op het niveau van de leerling. Op verzoek kan ze een
+uitgewerkt voorbeeld geven. Dit is gestuurd modelgedrag; probeer de klank en de
+uitleg in een live gesprek, de tests beoordelen geen echte stemopname.
+
+Met **Help met huiswerk** start je een nieuw gesprek en wordt de gespreksstijl
+**Huiswerkhulp** bewaard. Zij hoort eerst om het vak/de opgave te vragen. Je kunt
+ook gewoon om huiswerkhulp vragen tijdens een gesprek. Een bewust gekozen foto
+kan nu ook een opgave bevatten; in huiswerkstand krijgt ze specifieke instructies
+om eerst de leesbare opgave te begrijpen en niets te gokken bij onleesbare tekst.
+Eenvoudige reken- en taaloefeningen hoeven niet via Google; naslag en actuele
+vragen blijven opzoekbaar. Foto's blijven eenmalige gedeelde beelden.
+
+Stemhoogte, volume en bewegingen worden lokaal bewaard. De toonhoogtevervorming
+bij een stand boven 0 kan maximaal ongeveer 68 ms vertraging en een wat korrelige
+klank toevoegen; op 0 wordt het signaal direct doorgegeven. Na deze update moet
+de hulpserver opnieuw starten en een nieuw gesprek beginnen om ook de nieuwe
+basisinstructies te laden. De fysieke robot krijgt dezelfde basisstemconfiguratie,
+maar de browserbediening en het huiswerkprofiel zijn nog niet op hardware getest.
 
 ## Naam, geheugen, ochtendpraatje en natuurmaatje
 

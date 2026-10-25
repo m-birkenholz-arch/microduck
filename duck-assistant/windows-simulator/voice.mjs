@@ -1,4 +1,4 @@
-export async function createDuckVoice(context, semitones = 5) {
+export async function createDuckVoice(context, semitones = 0) {
   if (!context.audioWorklet) throw new Error('Eendenstem vereist Chrome of Edge op http://localhost:5173.');
   await context.audioWorklet.addModule(new URL('./voice-worklet.mjs', import.meta.url));
   const input = new AudioWorkletNode(context, 'duck-voice', {

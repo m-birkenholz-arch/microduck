@@ -289,7 +289,12 @@ is included in session instructions and refreshed only when it changes; micropho
 VAD start/stop events also refresh it. Instructions require a fresh status tool call
 before answering with name sharing enabled, avoiding stale attribution during the
 automatic VAD response. Updates do not create responses or interrupt playback.
-A dedicated greeting button can still start a fresh conversation.
+A dedicated greeting button can still start a fresh conversation with a one-sentence
+greeting, using a possible name when available, without a routine confirmation.
+Recognition uncertainty stays in the background: omit an uncertain name and continue
+the conversation. Ask “Wie praat er?” once only if identity matters. An explicit
+recognition question without a match gets “Ik herken je nog niet.” Technical
+limitations are explained only on request, rather than repeated aloud.
 
 Speaker attribution is an experimental local heuristic, not voice identification.
 Only during Realtime input VAD speech does each stable enrolled face accumulate

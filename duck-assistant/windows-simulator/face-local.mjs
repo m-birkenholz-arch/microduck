@@ -204,7 +204,7 @@ export class LocalFaceCamera {
       recognized_people: this.shareName && fresh ? this.people.map(p => ({ name: p.name })) : [],
       possible_speaker_name: this.shareName && fresh && this.speakerAt !== null && this.now() - this.speakerAt < 15000 ? this.speaker?.name || null : null,
       speaker_method: 'experimental_mouth_motion_during_detected_speech',
-      experimental: true, message: this.recognitionError ? 'De herkenning is gepauzeerd; er is geen naam beschikbaar.' : !this.shareName ? 'Naam delen staat uit; beelden en gezichtsprofielen blijven lokaal.' : 'Lokale, onzekere herkenning. Geen identiteitsbewijs.' };
+      experimental: true, message: this.recognitionError ? 'De herkenning is gepauzeerd; er is geen naam beschikbaar.' : !this.shareName ? 'Naam delen staat uit; beelden en gezichtsprofielen blijven lokaal.' : 'Lokale herkenning actief.' };
   }
   stop(reason = 'Camera uit — geen beelden worden verwerkt.') {
     this.generation++; this.active = false; this.shareName = false; this.recognitionError = ''; this.engine = null;

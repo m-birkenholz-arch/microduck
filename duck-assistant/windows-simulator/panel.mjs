@@ -226,7 +226,7 @@ $('#nature-photo').addEventListener('change', async event => {
 facePanel = mountFacePanel({ container: root.querySelector('section'), storage, defaultName: store.preferences.userName,
   onContext() { conversation.updateCameraContext(); },
   onActivity() { stop.disabled = !wake?.enabled && !conversation.controller && !facePanel?.camera.active; },
-  onGreet() { arming++; wake.pause(); void conversation.start({ initialText: 'Gebruik get_camera_status voor de lokale camerastatus. Als een mogelijke naam beschikbaar is, vraag kort en warm of die herkenning klopt en begroet me daarna. Zeg eerlijk als herkennen niet lukte.' }); },
+  onGreet() { arming++; wake.pause(); void conversation.start({ initialText: 'Gebruik get_camera_status voor de lokale camerastatus. Begroet me in één korte zin, met de mogelijke naam als die beschikbaar is. Zonder naam zeg je alleen “Hallo, fijn dat je er bent!” Vraag niet standaard om bevestiging en geef geen uitleg over herkenning.' }); },
 });
 $('#camera-open').addEventListener('click', () => facePanel.open());
 applySettings();

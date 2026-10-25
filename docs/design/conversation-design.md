@@ -124,16 +124,37 @@ The browser session profile preserves the Rust assistant's model, exact Dutch
 instructions, voice and VAD settings; a test guards instruction drift. WebRTC
 negotiates its media format, so this mode does not exercise the robot's 24 kHz
 WebSocket PCM conversion, ALSA capture, Unix socket framing or RobotAudio playback.
-It tests conversational behavior, interruption, browser audio and a cosmetic
-beak animation. There is no control path from the language model to movement.
+It tests conversational behavior, interruption, browser audio, cosmetic beak
+animation and expressive head/neck motion through the simulator's existing
+policy head commands. No model-generated commands can start locomotion or skills.
 
 Server VAD cancels the response and clears the WebRTC output buffer on barge-in;
 the browser also immediately mutes playback until the next output buffer starts.
 An analyser samples the played audio amplitude to animate only the rendered jaw.
 The installer composes this opening with the simulator's existing quack/gamepad
-jaw opening and leaves physics and policy targets alone. Stop, a closed session,
+jaw opening. Stop, a closed session,
 page exit or a startup failure closes the peer connection and microphone tracks,
 including tracks granted after Stop was pressed during the permission dialog.
+
+### Existing expressions connected to speech
+
+`motion.mjs` ports the small `robotd::chorale::head_expression` pattern, using
+played speech amplitude as the reach parameter instead of a sung note's pitch.
+A parity test checks the existing Rust pattern's constants and output. Listening
+and waiting use a restrained neck lean and curious tilt in the spirit of
+`idle_head.rs`; this is not a port of its full autonomous glance/yawn behaviour.
+Explicit client phases come from input/output buffer events. `response.done`
+does not end the speaking motion because buffered audio may still be playing.
+
+The offset is added to the existing `headTarget` before its normal 50 Hz EMA;
+the stored manual target is never changed. The installer validates this hook
+before editing any source. The extension yields while moving, in head mode,
+during boot/respawn, sit/skills, recovery, dragging, scripts, community policies,
+roller mode and stand-up/post-kick transitions. There is no queue of gestures to
+replay when these end. The head offsets fade toward zero at Stop, and can be
+disabled separately from voice. Body pose/leg reactions are not added: the
+robot's idle body-breathing path is limited to a trained standing network and
+cannot be assumed to work in the browser walker's body command slots.
 
 The browser build and automated tests do not establish Windows device access or
 live OpenAI account/model access; those require a conversation on the laptop.

@@ -1,6 +1,6 @@
 # Praten met de browsersimulator op Windows 11
 
-Deze uitbreiding voegt een Nederlands spraakgesprek en cosmetische snavelanimatie
+Deze uitbreiding voegt een Nederlands spraakgesprek, snavelanimatie en hoofd-/nekreacties
 toe aan een lokale kopie van de officiële
 [Microduck-browsersimulator](https://huggingface.co/spaces/pollen-robotics/microduck-simulator).
 De [gespreksarchitectuur](../../docs/design/conversation-design.md#windows-browser-test)
@@ -23,8 +23,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -SimulatorPath
 De execution policy geldt alleen voor dat proces. De installer downloadt de
 bestanden uit één vaste commit op `feature/conversation`, bewaart de originele
 `app/index.html` en `app/src/game/game.js` als `.before-conversation`-bestanden,
-en voegt de knoppen en de snavelkoppeling toe. Opnieuw installeren is toegestaan.
-Een onbekende snavelimplementatie breekt de installatie af voordat bronbestanden
+en voegt de knoppen, snavelkoppeling en koppeling aan de bestaande hoofdsturing toe.
+Opnieuw installeren of een snavel-only versie upgraden is toegestaan.
+Een onbekende snavel- of hoofdimplementatie breekt de installatie af voordat bronbestanden
 worden aangepast.
 
 Plak je API-key in de verborgen PowerShell-invoer en druk op Enter. Er verschijnen
@@ -38,6 +39,15 @@ Ververs `http://localhost:5173`. Rechtsboven staat **Praat met Microduck**:
 3. Zeg bijvoorbeeld: “Goedemorgen, hoe gaat het?”
 4. Praat door een antwoord heen om onderbreken te proberen.
 5. Klik op **Stop** om de verbinding en de microfoon af te sluiten.
+
+**Hoofd en nek bewegen mee** schakelt de lichaamsreacties aan of uit. Tijdens
+spreken beweegt de kop met het volume en de bestaande expressieve zangbeweging.
+Tijdens luisteren kantelt de kop rustig. De reacties worden naar neutraal gedempt
+wanneer het gesprek stopt. Ze wijken voor lopen, handmatige hoofdbesturing,
+trucs, oppakken, herstel, scripts en community-policies. De simulator gebruikt
+daarvoor zijn bestaande hoofdcommando's en smoothing. Romp- en beenbewegingen
+zijn niet toegevoegd; de robotcode ondersteunt body-breathing alleen met een
+daarvoor getrainde staande policy.
 
 De microfoon blijft open zolang het gesprek actief is. Een nieuw gestart gesprek
 begint met een lege sessie. Deze versie heeft geen weer-, zoek- of andere tools.

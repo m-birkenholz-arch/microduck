@@ -5,9 +5,14 @@ import { request as httpRequest } from 'node:http';
 import { readFile, writeFile, mkdtemp, mkdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
+import vm from 'node:vm';
 import { createConversationServer, profile } from './server.mjs';
 import { DuckConversation } from './client.mjs';
 import { install } from './install.mjs';
+import { ConversationMotion, headExpression } from './motion.mjs';
+
+const originalHead = 'for (let h = 0; h < 4; h++) headSmooth[h] += HEAD_ALPHA * (headTarget[h] - headSmooth[h]);';
+const originalGame = `function buildObs() { ${originalHead} }\nfunction jawOpenNow() { return Math.min(1, pickJawNow() + Math.max(flap, padJaw)); }`;
 
 const offer = 'v=0\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\n';
 const origin = 'http://localhost:5173';
@@ -90,7 +95,7 @@ test('installer is repeatable, preserves the original files and connects the jaw
   t.after(() => rm(root, { recursive: true, force: true }));
   await mkdir(path.join(root, 'app/src/game'), { recursive: true });
   const index = '<body>simulator</body>';
-  const game = 'function jawOpenNow() { return Math.min(1, pickJawNow() + Math.max(flap, padJaw)); }';
+  const game = originalGame;
   await writeFile(path.join(root, 'app/index.html'), index);
   await writeFile(path.join(root, 'app/src/game/game.js'), game);
   await install(root);
@@ -98,9 +103,121 @@ test('installer is repeatable, preserves the original files and connects the jaw
   await install(root);
   assert.equal(await readFile(path.join(root, 'app/src/game/game.js'), 'utf8'), first);
   assert.ok(first.includes('getConversationJaw()'));
+  assert.ok(first.includes('stepConversationHead(CTRL_DT,'));
   assert.equal(await readFile(path.join(root, 'app/index.html.before-conversation'), 'utf8'), index);
   assert.equal(await readFile(path.join(root, 'app/src/game/game.js.before-conversation'), 'utf8'), game);
   assert.equal((await readFile(path.join(root, 'app/index.html'), 'utf8')).split('/src/duck-conversation/panel.mjs').length, 2);
+});
+
+test('upgrading a jaw-only install preserves manual head targets and yields to other movement', async t => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'duck-upgrade-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await mkdir(path.join(root, 'app/src/game'), { recursive: true });
+  await writeFile(path.join(root, 'app/index.html'), '<body><script type="module" src="/src/duck-conversation/panel.mjs"></script></body>');
+  await writeFile(path.join(root, 'app/src/game/game.js'),
+    'import { getConversationJaw } from "../duck-conversation/mouth.mjs";\n' +
+    originalGame.replace('Math.max(flap, padJaw)', 'Math.max(flap, padJaw, getConversationJaw())'));
+  await install(root);
+  const patched = (await readFile(path.join(root, 'app/src/game/game.js'), 'utf8')).replace(/^import .*;\n/gm, '');
+  const context = {
+    CTRL_DT: 0.02, HEAD_ALPHA: 0.2, inputLocked: false, mode: 'walk', loco: 'legs',
+    headMode: false, recovery: null, grab: null, scriptRun: null, customPolicy: null,
+    postKickLock: 0, standTimer: null, cmd: [0, 0, 0],
+    headTarget: [0.3, -0.1, 0.2, 0.1], headSmooth: [0, 0, 0, 0],
+    stepConversationHead: (dt, allowed) => allowed ? [0.01, -0.04, 0.03, 0.02] : [0, 0, 0, 0],
+  };
+  vm.createContext(context);
+  vm.runInContext(patched, context);
+  context.buildObs();
+  assert.ok(Math.abs(context.headSmooth[0] - 0.2 * 0.31) < 1e-10);
+  assert.deepEqual(context.headTarget, [0.3, -0.1, 0.2, 0.1]);
+  for (const override of [
+    { inputLocked: true }, { mode: 'groundpick' }, { mode: 'sitstand' }, { mode: 'kickL' },
+    { mode: 'roll' }, { loco: 'rollers' }, { headMode: true }, { recovery: {} },
+    { grab: {} }, { scriptRun: {} }, { customPolicy: {} }, { postKickLock: 1 },
+    { standTimer: {} }, { cmd: [0.1, 0, 0] },
+  ]) {
+    const before = Object.fromEntries(Object.keys(override).map(key => [key, context[key]]));
+    Object.assign(context, override);
+    context.headSmooth = [0, 0, 0, 0];
+    context.buildObs();
+    for (let h = 0; h < 4; h++) assert.equal(context.headSmooth[h], 0.2 * context.headTarget[h]);
+    Object.assign(context, before);
+  }
+});
+
+test('unknown head code prevents even the jaw/index edits', async t => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'duck-head-version-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await mkdir(path.join(root, 'app/src/game'), { recursive: true });
+  const index = '<body>untouched</body>';
+  const game = originalGame.replace(originalHead, '// unknown head implementation');
+  await writeFile(path.join(root, 'app/index.html'), index);
+  await writeFile(path.join(root, 'app/src/game/game.js'), game);
+  await assert.rejects(install(root), /Hoofdsturing wijkt af/);
+  assert.equal(await readFile(path.join(root, 'app/index.html'), 'utf8'), index);
+  assert.equal(await readFile(path.join(root, 'app/src/game/game.js'), 'utf8'), game);
+});
+
+test('conversation phases follow actual input/output audio and interruption', async () => {
+  const phases = [];
+  const f = browserFixture({ onPhase: phase => phases.push(phase) });
+  await f.duck.start();
+  f.channel.onopen();
+  f.duck.handleEvent({ type: 'input_audio_buffer.speech_started' });
+  f.duck.handleEvent({ type: 'input_audio_buffer.speech_stopped' });
+  f.duck.handleEvent({ type: 'output_audio_buffer.started' });
+  // response.done can precede completion of buffered audio: it must not stop motion.
+  f.duck.handleEvent({ type: 'response.done' });
+  assert.equal(phases.at(-1), 'speaking');
+  f.duck.handleEvent({ type: 'input_audio_buffer.speech_started' });
+  assert.equal(phases.at(-1), 'listening');
+  f.duck.stop();
+  assert.deepEqual(phases, ['off', 'connecting', 'listening', 'listening', 'thinking', 'speaking', 'listening', 'off']);
+});
+
+test('speaking reuses the existing chorale head-expression pattern', async () => {
+  const rust = await readFile(new URL('../../robotd/src/chorale.rs', import.meta.url), 'utf8');
+  const values = Object.fromEntries([...rust.matchAll(/const (SWAY_ROLL|DRIFT_YAW|REACH_LIFT|BOB_PITCH): f64 = (-?[\d.]+);/g)]
+    .map(match => [match[1], Number(match[2])]));
+  for (const beat of [0, 0.1, 1, 2.5, 7.1]) {
+    const reach = 0.7;
+    const expected = [0,
+      values.REACH_LIFT * reach + values.BOB_PITCH * Math.sin(2 * Math.PI * beat),
+      values.DRIFT_YAW * Math.sin(2 * Math.PI * beat / 8),
+      values.SWAY_ROLL * Math.sin(2 * Math.PI * beat / 4)];
+    assert.deepEqual(headExpression(beat, reach), expected);
+  }
+});
+
+test('motion stays bounded, fades to neutral and does not queue reactions during manual control', () => {
+  const motion = new ConversationMotion();
+  assert.deepEqual(motion.step(0.02, true), [0, 0, 0, 0]);
+  motion.setPhase('speaking');
+  motion.setLevel(1);
+  let last = [0, 0, 0, 0];
+  let moved = false;
+  for (let step = 0; step < 500; step++) {
+    const head = [...motion.step(0.02, true)];
+    for (let h = 0; h < 4; h++) {
+      assert.ok(Math.abs(head[h]) <= 0.13);
+      assert.ok(Math.abs(head[h] - last[h]) < 0.01);
+    }
+    moved ||= head.some(value => Math.abs(value) > 0.02);
+    last = head;
+  }
+  assert.ok(moved);
+  assert.deepEqual(motion.step(0.02, false), [0, 0, 0, 0]);
+  assert.ok(motion.step(0.02, true).every(value => Math.abs(value) < 0.01));
+  motion.setPhase('listening');
+  for (let step = 0; step < 100; step++) motion.step(0.02, true);
+  assert.ok(motion.head[3] > 0.02);
+  motion.setPhase('off');
+  for (let step = 0; step < 300; step++) motion.step(0.02, true);
+  assert.deepEqual(motion.head, [0, 0, 0, 0]);
+  motion.setPhase('speaking');
+  motion.enabled = false;
+  assert.deepEqual(motion.step(0.02, true), [0, 0, 0, 0]);
 });
 
 test('installer refuses an unknown simulator version before editing files', async t => {

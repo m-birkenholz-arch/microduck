@@ -1,6 +1,6 @@
 // Browser audio uses WebRTC; the helper only exchanges SDP with OpenAI.
 export class DuckConversation {
-  constructor({ onStatus = () => {}, onText = () => {}, onLevel = () => {},
+  constructor({ onStatus = () => {}, onText = () => {}, onLevel = () => {}, onPhase = () => {},
     mediaDevices = globalThis.navigator?.mediaDevices,
     makePeer = () => new RTCPeerConnection(),
     makeAudio = () => new Audio(),
@@ -9,7 +9,7 @@ export class DuckConversation {
     // of DuckConversation throws Illegal invocation before making any request.
     fetchImpl = (...args) => globalThis.fetch(...args),
   } = {}) {
-    Object.assign(this, { onStatus, onText, onLevel, mediaDevices, makePeer, makeAudio, makeContext, fetchImpl });
+    Object.assign(this, { onStatus, onText, onLevel, onPhase, mediaDevices, makePeer, makeAudio, makeContext, fetchImpl });
     this.generation = 0;
   }
 
@@ -18,6 +18,7 @@ export class DuckConversation {
     const generation = this.generation;
     const current = () => generation === this.generation;
     this.onStatus('Verbinden…', true);
+    this.onPhase('connecting');
     const controller = this.controller = new AbortController();
     let phase = 'audio';
     try {
@@ -70,7 +71,9 @@ export class DuckConversation {
         if (!current()) return;
         try { this.handleEvent(JSON.parse(event.data)); } catch { /* Ignore non-JSON transport messages. */ }
       };
-      channel.onopen = () => { if (current()) this.onStatus('Verbonden — praat maar', true); };
+      channel.onopen = () => {
+        if (current()) { this.onPhase('listening'); this.onStatus('Verbonden — praat maar', true); }
+      };
       channel.onclose = () => { if (current()) this.fail('De gespreksverbinding is gesloten. Je kunt opnieuw starten.'); };
       peer.onconnectionstatechange = () => {
         if (current() && ['failed', 'closed'].includes(peer.connectionState)) {
@@ -112,12 +115,18 @@ export class DuckConversation {
       // WebRTC's server buffer is interrupted by VAD; mute locally immediately.
       this.audio.muted = true;
       this.onLevel(0);
+      this.onPhase('listening');
       this.onStatus('Ik luister…', true);
+    } else if (event.type === 'input_audio_buffer.speech_stopped') {
+      this.onPhase('thinking');
+      this.onStatus('Even nadenken…', true);
     } else if (event.type === 'output_audio_buffer.started') {
       this.audio.muted = false;
+      this.onPhase('speaking');
       this.onStatus('Microduck spreekt…', true);
     } else if (['output_audio_buffer.stopped', 'output_audio_buffer.cleared'].includes(event.type)) {
       this.onLevel(0);
+      this.onPhase('listening');
       this.onStatus('Verbonden — praat maar', true);
     } else if (event.type === 'response.output_audio_transcript.done') {
       this.onText(event.transcript || '');
@@ -141,6 +150,7 @@ export class DuckConversation {
     this.context?.close().catch(() => {});
     this.controller = this.channel = this.peer = this.stream = this.audio = this.context = this.source = null;
     this.onLevel(0);
+    this.onPhase('off');
     this.onStatus('Gesprek gestopt', false);
   }
 }

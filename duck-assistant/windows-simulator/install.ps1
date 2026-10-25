@@ -20,7 +20,7 @@ if ($Ref -notmatch '^[a-f0-9]{40}$') { throw 'Kon de installatieversie niet bepa
 $tools = Join-Path $SimulatorPath 'duck-conversation-tools'
 New-Item -ItemType Directory -Force -Path $tools | Out-Null
 $base = "https://raw.githubusercontent.com/m-birkenholz-arch/microduck/$Ref/duck-assistant/windows-simulator"
-foreach ($name in @('server.mjs', 'session.json', 'client.mjs', 'panel.mjs', 'mouth.mjs', 'install.mjs', 'start.ps1')) {
+foreach ($name in @('server.mjs', 'session.json', 'client.mjs', 'panel.mjs', 'mouth.mjs', 'motion.mjs', 'install.mjs', 'start.ps1')) {
     Invoke-WebRequest -UseBasicParsing -Uri "$base/$name" -OutFile (Join-Path $tools $name)
 }
 & $node.Source (Join-Path $tools 'install.mjs') $SimulatorPath

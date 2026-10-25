@@ -1,5 +1,6 @@
 import { DuckConversation } from './client.mjs';
 import { setConversationJaw } from './mouth.mjs';
+import { conversationMotion } from './motion.mjs';
 
 const host = document.createElement('aside');
 host.id = 'duck-conversation-panel';
@@ -21,6 +22,7 @@ root.innerHTML = `
  <div class="actions"><button id="start">Start gesprek</button><button id="stop" disabled>Stop</button></div>
  <p id="status" role="status" aria-live="polite">Klaar om te praten</p>
  <progress id="level" max="1" value="0" aria-label="Stemvolume Microduck"></progress>
+ <p class="hint"><label><input id="motion" type="checkbox" checked> Hoofd en nek bewegen mee</label></p>
  <p id="text"></p>
  <p class="hint">Je microfoon blijft tijdens het gesprek open. Klik op Stop om af te sluiten. OpenAI API-gebruik kost apart geld.</p>
 </section>`;
@@ -33,7 +35,15 @@ const conversation = new DuckConversation({
     stop.disabled = !active;
   },
   onText(text) { root.querySelector('#text').textContent = text; },
-  onLevel(level) { root.querySelector('#level').value = level; setConversationJaw(level); },
+  onLevel(level) {
+    root.querySelector('#level').value = level;
+    setConversationJaw(level);
+    conversationMotion.setLevel(level);
+  },
+  onPhase(phase) { conversationMotion.setPhase(phase); },
+});
+root.querySelector('#motion').addEventListener('change', event => {
+  conversationMotion.enabled = event.target.checked;
 });
 // Keep UI events away from the simulator's keyboard/gamepad gesture handlers.
 for (const type of ['keydown', 'keyup', 'pointerdown', 'pointerup', 'click']) {

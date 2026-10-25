@@ -24,6 +24,9 @@ interruptible robotd playback; see the [conversation stream design](../docs/desi
 
 ## Configuration
 
+To try a conversation without hardware on Windows 11, see the
+[browser simulator test mode](windows-simulator/README.md).
+
 Set `OPENAI_API_KEY` in the service environment. Never commit an API key to this repository.
 
 Optional environment variables:

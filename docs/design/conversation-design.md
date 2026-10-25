@@ -109,3 +109,31 @@ consumers must release it or share capture through ALSA configuration; microphon
 multiplexing and acoustic echo cancellation are not implemented here. Hardware
 acceptance tests for simultaneous listening, playback, and interruption remain.
 The per-robot speech voice transform and embodiment milestones remain future work.
+
+## Windows browser test
+
+`duck-assistant/windows-simulator` is an installable overlay for the official
+Hugging Face browser simulator, separate from the MuJoCo daemon simulator. A
+local Node.js helper exchanges SDP with `/v1/realtime/calls`; browser microphone
+and speaker media travel over WebRTC directly to OpenAI. The helper binds only
+to loopback, validates Host and Origin, and keeps the project API key out of
+Vite, the browser, files, and logs. The PowerShell launcher reads the key with
+hidden input and restores its previous process environment on exit.
+
+The browser session profile preserves the Rust assistant's model, exact Dutch
+instructions, voice and VAD settings; a test guards instruction drift. WebRTC
+negotiates its media format, so this mode does not exercise the robot's 24 kHz
+WebSocket PCM conversion, ALSA capture, Unix socket framing or RobotAudio playback.
+It tests conversational behavior, interruption, browser audio and a cosmetic
+beak animation. There is no control path from the language model to movement.
+
+Server VAD cancels the response and clears the WebRTC output buffer on barge-in;
+the browser also immediately mutes playback until the next output buffer starts.
+An analyser samples the played audio amplitude to animate only the rendered jaw.
+The installer composes this opening with the simulator's existing quack/gamepad
+jaw opening and leaves physics and policy targets alone. Stop, a closed session,
+page exit or a startup failure closes the peer connection and microphone tracks,
+including tracks granted after Stop was pressed during the permission dialog.
+
+The browser build and automated tests do not establish Windows device access or
+live OpenAI account/model access; those require a conversation on the laptop.

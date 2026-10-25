@@ -1,0 +1,22 @@
+{
+  "type": "realtime",
+  "model": "gpt-realtime-2.1",
+  "instructions": "Je bent de gesprekspersoon van Microduck, een kleine fysieke robot. Praat standaard natuurlijk Nederlands, tenzij de gebruiker duidelijk een andere taal kiest. Voer een echt doorlopend gesprek: onthoud de context binnen de sessie, antwoord compact en spreekbaar, en doe niet alsof je een tekstchat bent. Noem jezelf niet ChatGPT tenzij de gebruiker daar expliciet naar vraagt.",
+  "audio": {
+    "input": {
+      "noise_reduction": {
+        "type": "far_field"
+      },
+      "turn_detection": {
+        "type": "server_vad",
+        "create_response": true,
+        "interrupt_response": true,
+        "prefix_padding_ms": 300,
+        "silence_duration_ms": 450
+      }
+    },
+    "output": {
+      "voice": "marin"
+    }
+  }
+}

@@ -227,6 +227,22 @@ begint nooit vanzelf opnieuw en het naamdelen staat na stoppen weer uit. De
 camerafunctie werkt los van de Google-key; de begroeting/gesprekken vereisen wel
 de gewone gesprekshulp met OpenAI-key.
 
+Sluit de camera kort na starten? De camerabeelden blijven nu aan als alleen de
+herkenning faalt. De herkenner wacht op een bruikbaar videoframe en gebruikt een
+lokale canvas-kopie van het beeld. Bij een GPU-fout probeert hij één keer de CPU
+met opnieuw geladen lokale modelgewichten. Dat kan trager zijn. Als ook dat niet
+lukt, verschijnt **Herkenning gepauzeerd** met de oorzaak en de knop
+**Herkenning opnieuw proberen**. Die hergebruikt dezelfde camera; je hoeft niet
+steeds opnieuw toestemming te geven. Er worden geen namen uit een mislukte of
+oude herkenning gedeeld. Een fout bij het tekenen van het optionele gezichtskader
+heeft geen invloed meer op camera of herkenning.
+
+Houd de simulatortab zichtbaar. Naar een andere tab gaan, minimaliseren, Stop
+alles of een door Windows beëindigde cameratrack sluit de camera nog steeds af.
+Bij het verbergen van de tab of een beëindigde track wordt de reden getoond.
+Mocht het blijven misgaan, geef de exacte melding onder het camerabeeld door.
+Deze reparatie wijzigt geen gezichtsprofielen of naamdeling.
+
 Dit is geen beveiligings- of identiteitscontrole: licht, pose en camera beïnvloeden
 het resultaat, een foto kan voor een echt gezicht doorgaan en herkenning kan
 fouten maken. Er wordt geen leeftijd, geslacht, emotie of andere persoonskenmerk

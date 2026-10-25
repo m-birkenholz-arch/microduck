@@ -155,8 +155,8 @@ function applySettings(updateForm = true) {
   renderMemories();
 }
 let arming = 0;
-function stopAll() {
-  arming++; wake?.disable(); facePanel?.camera.stop(); conversation.stop();
+function stopAll(reason) {
+  arming++; wake?.disable(); facePanel?.camera.stop(typeof reason === 'string' ? reason : undefined); conversation.stop();
   $('#photo-preview').hidden = true; $('#photo-preview').removeAttribute('src');
 }
 wake = new WakeWord({
@@ -236,7 +236,7 @@ for (const type of ['keydown', 'keyup', 'pointerdown', 'pointerup', 'click']) {
 start.addEventListener('click', () => { arming++; wake.pause(); void conversation.start(); });
 stop.addEventListener('click', stopAll);
 document.body.append(host);
-const hide = () => { if (document.hidden) stopAll(); };
+const hide = () => { if (document.hidden) stopAll('Camera gestopt omdat de simulatortab verborgen is. Houd de simulatortab zichtbaar en klik opnieuw op Camera starten.'); };
 document.addEventListener('visibilitychange', hide);
 const cleanup = () => { stopAll(); facePanel?.dispose(); document.removeEventListener('visibilitychange', hide); host.remove(); };
 window.addEventListener('pagehide', cleanup, { once: true });

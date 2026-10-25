@@ -23,7 +23,7 @@ if ($Ref -notmatch '^[a-f0-9]{40}$') { throw 'Kon de installatieversie niet bepa
 $tools = Join-Path $SimulatorPath 'duck-conversation-tools'
 New-Item -ItemType Directory -Force -Path $tools | Out-Null
 $base = "https://raw.githubusercontent.com/m-birkenholz-arch/microduck/$Ref/duck-assistant/windows-simulator"
-foreach ($name in @('server.mjs', 'search-google.mjs', 'session.json', 'client.mjs', 'panel.mjs', 'mouth.mjs', 'motion.mjs', 'gestures.mjs', 'voice.mjs', 'voice-worklet.mjs', 'search-tools.mjs', 'companion.mjs', 'wake.mjs', 'photo.mjs', 'face-local.mjs', 'face-panel.mjs', 'face-assets.mjs', 'face-assets.json', 'install.mjs', 'start.ps1')) {
+foreach ($name in @('server.mjs', 'search-google.mjs', 'session.json', 'client.mjs', 'panel.mjs', 'mouth.mjs', 'motion.mjs', 'gestures.mjs', 'voice.mjs', 'voice-worklet.mjs', 'search-tools.mjs', 'companion.mjs', 'wake.mjs', 'photo.mjs', 'face-local.mjs', 'face-engine.mjs', 'face-panel.mjs', 'face-assets.mjs', 'face-assets.json', 'install.mjs', 'start.ps1')) {
     Invoke-WebRequest -UseBasicParsing -Uri "$base/$name" -OutFile (Join-Path $tools $name)
 }
 if ($FaceCamera) {

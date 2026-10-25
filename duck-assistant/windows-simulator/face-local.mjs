@@ -1,3 +1,5 @@
+import { createFaceEngine, loadFaceModels } from './face-engine.mjs';
+
 export const FACE_STORAGE_KEY = 'microduck.faces.v1';
 export const FACE_ENGINE = 'face-api-0.22.2';
 export const cameraStatusTool = { type: 'function', name: 'get_camera_status',
@@ -70,13 +72,8 @@ export function loadFaceEngine() {
     if (!api?.nets) throw new Error('De lokale herkenningsbibliotheek kon niet starten. Installeer de update met -FaceCamera.');
     try { if (!await api.tf.setBackend('webgl')) await api.tf.setBackend('cpu'); }
     catch { await api.tf.setBackend('cpu'); }
-    let loadTimer;
-    try { await Promise.race([new Promise((resolve, reject) => { loadTimer = setTimeout(() => reject(new Error('Lokale gezichtsmodellen laden duurde te lang. Installeer opnieuw met -FaceCamera.')), 45000); }),
-      Promise.all([api.nets.tinyFaceDetector.loadFromUri('/duck-face/models'),
-      api.nets.faceLandmark68TinyNet.loadFromUri('/duck-face/models'), api.nets.faceRecognitionNet.loadFromUri('/duck-face/models')])]); }
-    finally { clearTimeout(loadTimer); }
-    return { detect: video => api.detectAllFaces(video, new api.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.75 }))
-      .withFaceLandmarks(true).withFaceDescriptors() };
+    await loadFaceModels(api);
+    return createFaceEngine(api);
   })().catch(error => { enginePromise = null; throw error; });
   return enginePromise;
 }
@@ -85,7 +82,7 @@ export class LocalFaceCamera {
   constructor({ video, gallery, mediaDevices = globalThis.navigator?.mediaDevices, makeEngine = loadFaceEngine,
     onState = () => {}, onResult = () => {}, schedule = setTimeout, unschedule = clearTimeout, now = Date.now }) {
     Object.assign(this, { video, gallery, mediaDevices, makeEngine, onState, onResult, schedule, unschedule, now });
-    this.active = false; this.generation = 0; this.shareName = false; this.reset();
+    this.active = false; this.generation = 0; this.shareName = false; this.recognitionError = ''; this.trackCleanup = []; this.reset();
   }
   reset() { this.recent = []; this.match = null; this.candidate = null; this.streak = 0; this.faceCount = 0; this.lastAt = null; }
   async start() {
@@ -93,12 +90,20 @@ export class LocalFaceCamera {
     this.onState('Lokale gezichtsmodellen laden…');
     try {
       const engine = await this.makeEngine(); if (generation !== this.generation) return;
+      this.engine = engine;
       if (!this.mediaDevices?.getUserMedia) throw new Error('Open de simulator op http://localhost:5173 in Chrome of Edge.');
       const stream = await this.mediaDevices.getUserMedia({ audio: false, video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } } });
       if (generation !== this.generation) { stream.getTracks().forEach(t => t.stop()); return; }
-      this.stream = stream; this.video.srcObject = stream; this.video.muted = true; this.video.playsInline = true;
+      this.stream = stream;
+      for (const track of stream.getVideoTracks?.() || []) {
+        const ended = () => { if (generation === this.generation) this.stop('De camera is door de browser of Windows gestopt. Start hem opnieuw als de toegang hersteld is.'); };
+        track.addEventListener?.('ended', ended);
+        this.trackCleanup.push(() => track.removeEventListener?.('ended', ended));
+      }
+      this.video.srcObject = stream; this.video.muted = true; this.video.playsInline = true;
       await this.video.play(); if (generation !== this.generation) return;
-      this.onState('Camera aan — herkenning wordt lokaal uitgevoerd.');
+      this.onState(engine.backend === 'cpu' ? 'Camera aan — lokale CPU-herkenning actief (kan trager zijn).' : 'Camera aan — herkenning wordt lokaal uitgevoerd.');
+      this.reportedBackend = engine.backend;
       await this.detect(engine, generation);
     } catch (error) {
       if (generation !== this.generation) return;
@@ -113,6 +118,7 @@ export class LocalFaceCamera {
     try {
       const faces = await engine.detect(this.video);
       if (generation !== this.generation) return;
+      if (engine.backend === 'cpu' && this.reportedBackend !== 'cpu') { this.reportedBackend = 'cpu'; this.onState('Camera aan — overgeschakeld naar lokale CPU-herkenning (kan trager zijn).'); }
       this.lastAt = this.now(); this.faceCount = faces.length; this.match = null;
       const face = faces.length === 1 ? faces[0] : null;
       const sample = face && descriptor(face.descriptor);
@@ -130,8 +136,19 @@ export class LocalFaceCamera {
           this.candidate ? 'Mogelijke herkenning controleren…' : 'Gezicht gezien, nog niet herkend.' });
       if (generation === this.generation && this.active) this.timer = this.schedule(() => { this.timer = null; void this.detect(engine, generation); }, 750);
     } catch (error) {
-      if (generation === this.generation) { this.stop(); this.onState('Lokale herkenning gestopt. Probeer de camera opnieuw te starten.'); }
+      if (generation === this.generation) {
+        this.reset();
+        this.recognitionError = String(error?.message || 'Onbekende herkenningsfout').replace(/\s+/g, ' ').slice(0, 240);
+        this.onResult({ faces: [], match: null, learnReady: false, message: 'Herkenning gepauzeerd — geen naam beschikbaar.' });
+        this.onState(`Camera blijft aan. Herkenning gepauzeerd: ${this.recognitionError}. Klik op Herkenning opnieuw proberen.`);
+      }
     }
+  }
+  async retry() {
+    if (!this.active || !this.engine || !this.recognitionError) return;
+    this.recognitionError = ''; this.reset();
+    this.onState('Camera aan — herkenning opnieuw proberen…');
+    await this.detect(this.engine, this.generation);
   }
   learn(name) {
     if (!this.active || this.recent.length !== 3 || this.now() - this.lastAt > 5000) throw new Error('Houd één gezicht even duidelijk in beeld tot Aanleren beschikbaar is.');
@@ -140,16 +157,17 @@ export class LocalFaceCamera {
   status() {
     if (!this.active) return { camera_active: false, message: 'De laptopcamera staat uit.' };
     const fresh = typeof this.lastAt === 'number' && this.now() - this.lastAt <= 5000;
-    return { camera_active: true, face_count: fresh ? this.faceCount : null, name_sharing: this.shareName,
+    return { camera_active: true, face_count: fresh ? this.faceCount : null, name_sharing: this.shareName, recognition_available: !this.recognitionError && fresh,
       possibly_recognized_name: this.shareName && fresh ? this.match?.name || null : null,
-      experimental: true, message: !this.shareName ? 'Naam delen staat uit; beelden en gezichtsprofielen blijven lokaal.' : 'Lokale, onzekere herkenning. Geen identiteitsbewijs.' };
+      experimental: true, message: this.recognitionError ? 'De herkenning is gepauzeerd; er is geen naam beschikbaar.' : !this.shareName ? 'Naam delen staat uit; beelden en gezichtsprofielen blijven lokaal.' : 'Lokale, onzekere herkenning. Geen identiteitsbewijs.' };
   }
-  stop() {
-    this.generation++; this.active = false; this.shareName = false;
+  stop(reason = 'Camera uit — geen beelden worden verwerkt.') {
+    this.generation++; this.active = false; this.shareName = false; this.recognitionError = ''; this.engine = null;
+    for (const remove of this.trackCleanup) remove(); this.trackCleanup = [];
     if (this.timer) this.unschedule(this.timer); this.timer = null;
     this.stream?.getTracks().forEach(t => t.stop()); this.stream = null;
     this.video.pause(); this.video.srcObject = null; this.reset();
     this.onResult({ faces: [], match: null, learnReady: false, message: 'Camera uit.' });
-    this.onState('Camera uit — geen beelden worden verwerkt.');
+    this.onState(reason);
   }
 }

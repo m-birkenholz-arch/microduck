@@ -243,7 +243,12 @@ installer validates the complete optional asset set before copying it to
 `app/public/duck-face`. Binaries are downloaded on the user's laptop, not stored
 in this repository. Once installed, browser script/weight requests are same-origin
 only. Missing models give a setup instruction. Script/model loading has bounded
-timeouts. WebGL is preferred with CPU fallback; the simulator and voice worklet
+timeouts. `face-engine.mjs` waits for current video data and takes a local 2D
+canvas snapshot at the intrinsic video dimensions before inference, clearing its
+pixels afterwards. This avoids passing an unready or driver-dependent video
+texture directly into TensorFlow. Model access is serialized across Stop/restart
+overlap. WebGL is preferred; the first inference failure triggers one CPU retry
+with locally reloaded weights rather than reusing possibly lost GPU textures; the simulator and voice worklet
 keep their existing independent pipelines.
 
 Only TinyFaceDetector, the tiny 68-point landmark network and the 128-dimensional
@@ -281,7 +286,14 @@ history; disabling sharing is not retrospective deletion.
 Stop, hidden tab, page exit and HMR close camera tracks, reset samples/results,
 clear the serial-loop timer and disable sharing. Generation guards release tracks
 granted after Stop and ignore late model/detection completion without reopening
-the camera. Explicit profile deletion also stops recognition to clear old matches.
+the camera. An inference failure now clears match/enrollment state and pauses only
+recognition; the camera preview stays open, with a bounded diagnostic message and
+a user-triggered retry button using the same stream. Retrying is disabled while
+recognition is already active and is generation-guarded against Stop. An optional
+rectangle-render failure only hides the overlay. A video track ended by the
+browser/OS still closes capture and shows a reason; listeners are removed on Stop.
+Hidden-tab shutdown also explains its cause and still requires an explicit restart.
+Explicit profile deletion also stops recognition to clear old matches.
 Model weights can remain cached in browser memory until page exit, but are not a
 camera recording. Readiness/consent controls and profile names use DOM text APIs.
 

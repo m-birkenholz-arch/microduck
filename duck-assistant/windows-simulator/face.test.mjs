@@ -4,6 +4,8 @@ import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
+import { drawFaceOverlay } from './face-panel.mjs';
+import { createFaceEngine } from './face-engine.mjs';
 import { FaceGallery, LocalFaceCamera, FACE_STORAGE_KEY, FACE_ENGINE, descriptor } from './face-local.mjs';
 import { setupFaceAssets, verifyFaceAssets, faceAssets } from './face-assets.mjs';
 
@@ -107,12 +109,16 @@ test('a detection completing after Stop cannot update the UI, enroll, share or r
   assert.equal(f.camera.status().camera_active, false);
 });
 
-test('permission and inference errors release the camera and produce a visible fallback', async () => {
+test('permission errors release the camera, but inference errors pause recognition while keeping the preview open', async () => {
   const denied = new Error('denied'); denied.name = 'NotAllowedError';
   const f = cameraFixture({ getUserMedia: async () => { throw denied; } }); await f.camera.start();
   assert.match(f.states.at(-1), /Camera geweigerd/); assert.equal(f.camera.active, false);
   const g = cameraFixture({ detect: async () => { throw new Error('GPU reset'); } }); await g.camera.start();
-  assert.equal(g.track.stopped, true); assert.equal(g.timers.size, 0); assert.match(g.states.at(-1), /herkenning gestopt/);
+  assert.equal(g.track.stopped, false); assert.equal(g.camera.active, true); assert.equal(g.video.srcObject, g.stream);
+  assert.equal(g.timers.size, 0); assert.match(g.states.at(-1), /GPU reset/);
+  assert.equal(g.camera.status().recognition_available, false);
+  assert.equal(g.camera.status().possibly_recognized_name, null);
+  g.camera.stop(); assert.equal(g.track.stopped, true);
 });
 
 test('model installer pins upstream files, validates hashes, reuses a valid cache and rejects corrupted download data', async t => {
@@ -129,4 +135,92 @@ test('model installer pins upstream files, validates hashes, reuses a valid cach
   assert.match(faceAssets.commit, /^[a-f0-9]{40}$/);
   assert.equal(faceAssets.files.filter(x => /manifest/.test(x.target)).length, 3);
   assert.ok(faceAssets.files.some(x => /LICENSE/.test(x.target)));
+});
+
+
+test('recognition retry reuses the camera stream and resumes a single loop, while Stop clears a pending retry', async () => {
+  let failing = true;
+  const f = cameraFixture({ detect: async () => { if (failing) throw new Error('transient inference'); return [face()]; } });
+  await f.camera.start(); assert.ok(f.camera.recognitionError); assert.equal(f.track.stopped, false);
+  failing = false; await f.camera.retry();
+  assert.equal(f.camera.recognitionError, ''); assert.equal(f.constraints.length, 1);
+  assert.equal(f.timers.size, 1); assert.equal(f.camera.status().recognition_available, true);
+  await f.camera.retry(); assert.equal(f.timers.size, 1, 'retry is disabled while recognition is already running');
+  f.camera.stop();
+  let resolve;
+  const g = cameraFixture({ detect: async () => { throw new Error('first error'); } });
+  await g.camera.start();
+  g.camera.engine.detect = () => new Promise(r => { resolve = r; });
+  const retry = g.camera.retry(); g.camera.stop(); resolve([face()]); await retry;
+  assert.equal(g.timers.size, 0); assert.equal(g.camera.match, null); assert.equal(g.camera.active, false);
+});
+
+function engineFixture({ detect, reloadModels } = {}) {
+  let backend = 'webgl', calls = 0, disposed = 0, snapshots = 0;
+  const switches = [];
+  const api = {
+    tf: { getBackend: () => backend, setBackend: async value => { switches.push(value); backend = value; return true; } },
+    nets: Object.fromEntries(['tinyFaceDetector', 'faceLandmark68TinyNet', 'faceRecognitionNet'].map(key => [key, { dispose() { disposed++; } }])),
+    TinyFaceDetectorOptions: class {},
+    detectAllFaces(input) { assert.ok(input.width > 0 && input.height > 0); calls++; return {
+      withFaceLandmarks: () => ({ withFaceDescriptors: () => detect ? detect(backend, calls) : Promise.resolve([face()]) }),
+    }; },
+  };
+  const snapshot = { width: 0, height: 0, getContext: () => ({ drawImage() { snapshots++; } }) };
+  const engine = createFaceEngine(api, { makeCanvas: () => snapshot, reloadModels: reloadModels || (async () => {}) });
+  return { engine, snapshot, switches, calls: () => calls, disposed: () => disposed, snapshots: () => snapshots };
+}
+
+test('engine waits for decoded video data, uses a local snapshot and clears its pixels after inference', async () => {
+  const f = engineFixture();
+  const video = { videoWidth: 0, videoHeight: 0, readyState: 0 };
+  assert.deepEqual(await f.engine.detect(video), []); assert.equal(f.calls(), 0);
+  Object.assign(video, { videoWidth: 640, videoHeight: 480, readyState: 1 });
+  assert.deepEqual(await f.engine.detect(video), []); assert.equal(f.calls(), 0);
+  video.readyState = 2; assert.equal((await f.engine.detect(video)).length, 1);
+  assert.equal(f.snapshots(), 1); assert.equal(f.snapshot.width, 0); assert.equal(f.snapshot.height, 0);
+});
+
+test('GPU inference failure switches to CPU once, reloads model weights and succeeds without closing video', async () => {
+  let reloaded = 0;
+  const f = engineFixture({ detect: async backend => { if (backend === 'webgl') throw new Error('shader compile failed'); return [face()]; }, reloadModels: async () => { reloaded++; } });
+  const video = { width: 640, height: 480 };
+  assert.equal((await f.engine.detect(video)).length, 1);
+  assert.deepEqual(f.switches, ['cpu']); assert.equal(reloaded, 1); assert.equal(f.disposed(), 3);
+  assert.equal(f.engine.backend, 'cpu'); assert.equal(f.snapshot.width, 0);
+  await f.engine.detect(video); assert.equal(reloaded, 1, 'no repeated GPU retries');
+});
+
+test('engine serializes Stop/start overlap and does not loop forever when both backends fail', async () => {
+  let release, started = 0;
+  const f = engineFixture({ detect: () => { started++; return new Promise(resolve => { release = resolve; }); } });
+  const first = f.engine.detect({ width: 640, height: 480 });
+  while (!release) await new Promise(resolve => setTimeout(resolve, 0));
+  const second = f.engine.detect({ width: 640, height: 480 }); assert.equal(started, 1);
+  release([face()]); await first;
+  while (started !== 2) await new Promise(resolve => setTimeout(resolve, 0));
+  release([face()]); await second;
+  const broken = engineFixture({ detect: async () => { throw new Error('inference unavailable'); } });
+  await assert.rejects(broken.engine.detect({ width: 640, height: 480 }), /inference unavailable/);
+  assert.equal(broken.calls(), 2); assert.deepEqual(broken.switches, ['cpu']); assert.equal(broken.snapshot.width, 0);
+});
+
+
+test('a rectangle canvas failure cannot close the video or pause recognition', async () => {
+  const canvas = { hidden: false, getContext() { throw new Error('2D context unavailable'); } };
+  const f = cameraFixture({ onResult: result => { assert.equal(drawFaceOverlay(canvas, {}, result.faces, result.match), false); } });
+  await f.camera.start(); assert.equal(f.camera.active, true); assert.equal(f.track.stopped, false);
+  assert.equal(f.camera.recognitionError, ''); assert.equal(f.timers.size, 1); assert.equal(canvas.hidden, true);
+  f.camera.stop(); assert.equal(f.track.stopped, true);
+});
+
+test('a video track ended by Windows closes the camera with a reason and removes track listeners', async () => {
+  const f = cameraFixture(), listeners = new Map();
+  f.stream.getVideoTracks = () => [f.track];
+  f.track.addEventListener = (name, callback) => listeners.set(name, callback);
+  f.track.removeEventListener = name => listeners.delete(name);
+  await f.camera.start(); listeners.get('ended')();
+  assert.equal(f.camera.active, false); assert.equal(f.track.stopped, true);
+  assert.equal(f.timers.size, 0); assert.equal(listeners.size, 0);
+  assert.match(f.states.at(-1), /browser of Windows gestopt/);
 });

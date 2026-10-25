@@ -1,5 +1,18 @@
 import { FaceGallery, LocalFaceCamera } from './face-local.mjs';
 
+export function drawFaceOverlay(canvas, video, faces, match) {
+  try {
+    canvas.width = video.videoWidth || 640; canvas.height = video.videoHeight || 480;
+    const context = canvas.getContext('2d');
+    if (!context) { canvas.hidden = true; return false; }
+    canvas.hidden = false;
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    context.strokeStyle = match ? '#74dc99' : '#ffdc70'; context.lineWidth = 3;
+    for (const face of faces) { const b = face.detection.box; context.strokeRect(b.x, b.y, b.width, b.height); }
+    return true;
+  } catch { canvas.hidden = true; return false; } // A rectangle must never stop video or recognition.
+}
+
 export function mountFacePanel({ container, storage, defaultName = '', onActivity = () => {}, onGreet = () => {}, cameraOptions = {} }) {
   const section = document.createElement('details');
   section.id = 'face-test';
@@ -10,7 +23,7 @@ export function mountFacePanel({ container, storage, defaultName = '', onActivit
       <video id="face-video" width="640" height="480" muted playsinline style="display:block;width:100%;height:auto;transform:scaleX(-1)"></video>
       <canvas id="face-overlay" width="640" height="480" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;transform:scaleX(-1)"></canvas>
     </div>
-    <div class="actions"><button id="face-start">Camera starten</button><button id="face-stop" disabled>Camera stoppen</button></div>
+    <div class="actions"><button id="face-start">Camera starten</button><button id="face-stop" disabled>Camera stoppen</button><button id="face-retry" disabled>Herkenning opnieuw proberen</button></div>
     <p id="face-state" role="status" class="hint">Camera uit</p>
     <p id="face-result" role="status"></p>
     <p><label>Naam voor je eigen gezicht<input id="face-name" type="text" maxlength="60"></label></p>
@@ -27,6 +40,7 @@ export function mountFacePanel({ container, storage, defaultName = '', onActivit
     onState(message) {
       $('#face-state').textContent = message;
       $('#face-start').disabled = camera.active; $('#face-stop').disabled = !camera.active;
+      $('#face-retry').disabled = !camera.active || !camera.recognitionError;
       $('#face-share').disabled = !camera.active;
       if (!camera.active) $('#face-share').checked = false;
       $('#face-preview').hidden = !camera.active;
@@ -36,14 +50,7 @@ export function mountFacePanel({ container, storage, defaultName = '', onActivit
       $('#face-result').textContent = message;
       $('#face-learn').disabled = !learnReady;
       $('#face-greet').disabled = !match || !camera.shareName;
-      const canvas = $('#face-overlay');
-      canvas.width = $('#face-video').videoWidth || 640; canvas.height = $('#face-video').videoHeight || 480;
-      const context = canvas.getContext('2d');
-      if (context) {
-        context.clearRect(0, 0, canvas.width, canvas.height);
-        context.strokeStyle = match ? '#74dc99' : '#ffdc70'; context.lineWidth = 3;
-        for (const face of faces) { const b = face.detection.box; context.strokeRect(b.x, b.y, b.width, b.height); }
-      }
+      drawFaceOverlay($('#face-overlay'), $('#face-video'), faces, match);
     },
   });
   function profiles() {
@@ -62,6 +69,7 @@ export function mountFacePanel({ container, storage, defaultName = '', onActivit
   }
   $('#face-start').addEventListener('click', () => { void camera.start(); });
   $('#face-stop').addEventListener('click', () => camera.stop());
+  $('#face-retry').addEventListener('click', () => { void camera.retry(); });
   $('#face-learn').addEventListener('click', () => {
     try {
       camera.learn($('#face-name').value); profiles();

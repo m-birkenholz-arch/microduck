@@ -168,6 +168,14 @@ names, notes and other preferences. Once the new profile is written, subsequent
 manual pitch/personality changes persist; the migration does not run again.
 Natural `marin` replaces the previous high `shimmer` carrier in both base profiles
 and the browser's initial session update. Saved user names are not renamed.
+The browser conversation defaults to one to three short sentences, answering
+immediately without repeating the question, paraphrasing the answer, or adding a
+closing summary. Follow-up questions are used only when needed. Tool calls have
+no spoken preamble: wait for the result, then give one concise answer rather than
+reading and re-explaining the same evidence. Homework uses one small step per
+turn; explicit requests for detail and necessary clarification can be longer.
+These are model instructions, not hard token limits or an enforced sentence count.
+
 The tutoring instructions call for level-appropriate explanations, a focused
 question about the task when needed, hints and small steps, worked examples on
 request, checked calculations and neutral correction. They guide model behavior,

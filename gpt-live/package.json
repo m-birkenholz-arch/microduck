@@ -1,0 +1,6 @@
+{
+  "name": "microduck-gpt-live",
+  "private": true,
+  "type": "module",
+  "scripts": { "start": "node server.mjs" }
+}

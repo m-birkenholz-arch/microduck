@@ -23,32 +23,66 @@ const instructions = [
   'Doe niet alsof je een tekstchat bent en noem jezelf niet ChatGPT tenzij de gebruiker daar expliciet naar vraagt.'
 ].join(' ');
 
-function send(res, status, body, type = 'text/plain; charset=utf-8') {
-  res.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store' });
+const ALLOWED_ORIGINS = new Set([
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  `http://${HOST}:${PORT}`,
+]);
+
+function corsHeaders(req) {
+  const origin = req.headers.origin;
+  if (!origin || !ALLOWED_ORIGINS.has(origin)) return {};
+  return {
+    'Access-Control-Allow-Origin': origin,
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Vary': 'Origin',
+  };
+}
+
+function send(req, res, status, body, type = 'text/plain; charset=utf-8') {
+  res.writeHead(status, {
+    'Content-Type': type,
+    'Cache-Control': 'no-store',
+    ...corsHeaders(req),
+  });
   res.end(body);
 }
 
 const server = http.createServer(async (req, res) => {
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204, corsHeaders(req));
+    res.end();
+    return;
+  }
+
   if (req.method === 'GET' && (req.url === '/' || req.url === '/client.js')) {
     const file = req.url === '/' ? 'index.html' : 'client.js';
     try {
       const body = await readFile(path.join(root, file));
-      send(res, 200, body, file.endsWith('.html') ? 'text/html; charset=utf-8' : 'text/javascript; charset=utf-8');
-    } catch { send(res, 500, 'Bestand ontbreekt.'); }
+      send(req, res, 200, body, file.endsWith('.html') ? 'text/html; charset=utf-8' : 'text/javascript; charset=utf-8');
+    } catch { send(req, res, 500, 'Bestand ontbreekt.'); }
     return;
   }
   if (req.method === 'GET' && req.url === '/health') {
-    send(res, 200, JSON.stringify({ ready: Boolean(API_KEY), model: MODEL }), 'application/json');
+    send(req, res, 200, JSON.stringify({
+      ready: Boolean(API_KEY),
+      model: MODEL,
+      instructions,
+      tools: [],
+      googleSearch: false,
+      companionVersion: 1,
+    }), 'application/json; charset=utf-8');
     return;
   }
-  if (req.method !== 'POST' || req.url !== '/session') { send(res, 404, 'Niet gevonden.'); return; }
-  if (!API_KEY) { send(res, 503, 'OPENAI_API_KEY ontbreekt.'); return; }
-  if (req.headers['content-type']?.split(';')[0] !== 'application/sdp') { send(res, 415, 'SDP verwacht.'); return; }
+  if (req.method !== 'POST' || req.url !== '/session') { send(req, res, 404, 'Niet gevonden.'); return; }
+  if (!API_KEY) { send(req, res, 503, 'OPENAI_API_KEY ontbreekt.'); return; }
+  if (req.headers['content-type']?.split(';')[0] !== 'application/sdp') { send(req, res, 415, 'SDP verwacht.'); return; }
 
   let sdp = '';
   for await (const chunk of req) {
     sdp += chunk.toString('utf8');
-    if (sdp.length > 131072) { send(res, 413, 'SDP te groot.'); return; }
+    if (sdp.length > 131072) { send(req, res, 413, 'SDP te groot.'); return; }
   }
 
   try {
@@ -68,15 +102,15 @@ const server = http.createServer(async (req, res) => {
     if (!upstream.ok) {
       const detail = await upstream.text().catch(() => '');
       console.error(`GPT-Live HTTP ${upstream.status}: ${detail}`);
-      send(res, 502, `GPT-Live sessie kon niet starten (HTTP ${upstream.status}).`);
+      send(req, res, 502, `GPT-Live sessie kon niet starten (HTTP ${upstream.status}).`);
       return;
     }
     const data = await upstream.json();
-    if (!data?.transport?.sdp) { send(res, 502, 'GPT-Live gaf geen WebRTC-antwoord.'); return; }
-    send(res, 200, data.transport.sdp, 'application/sdp');
+    if (!data?.transport?.sdp) { send(req, res, 502, 'GPT-Live gaf geen WebRTC-antwoord.'); return; }
+    send(req, res, 200, data.transport.sdp, 'application/sdp');
   } catch (error) {
     console.error('GPT-Live verbinding mislukt:', error);
-    send(res, 502, 'GPT-Live is niet bereikbaar.');
+    send(req, res, 502, 'GPT-Live is niet bereikbaar.');
   }
 });
 

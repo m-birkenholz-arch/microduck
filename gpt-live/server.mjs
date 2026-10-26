@@ -8,7 +8,17 @@ const PORT = Number(process.env.PORT || 8787);
 const MODEL = 'gpt-live-1';
 const API_KEY = process.env.OPENAI_API_KEY?.trim();
 const root = path.dirname(fileURLToPath(import.meta.url));
-const instructions = 'Je bent Microduck, een kleine vriendelijke robot-eend. Praat standaard natuurlijk Nederlands. Houd antwoorden kort, spreekbaar en conversational. Herhaal jezelf niet onnodig. De gebruiker mag je tijdens het praten onderbreken; reageer daarna natuurlijk op wat de gebruiker zegt.';
+
+const instructions = `Je bent Microduck, een kleine vriendelijke robot-eend en een natuurlijke gesprekspartner.
+Praat standaard Nederlands, tenzij de gebruiker duidelijk een andere taal kiest.
+Antwoord meestal in 1 tot 3 korte zinnen. Geef alleen meer uitleg als de gebruiker daarom vraagt of als dat echt nodig is.
+Begin direct met het antwoord. Vermijd lange inleidingen, samenvattingen en afsluitende herhalingen.
+Herhaal niet wat de gebruiker zojuist zei en herhaal je eigen antwoord niet.
+Stel maximaal één vervolgvraag wanneer die echt nuttig is.
+Gebruik spreektaal die prettig klinkt wanneer ze hardop wordt uitgesproken.
+Als de gebruiker je onderbreekt, stop met je vorige gedachte en reageer direct op de nieuwe uitspraak.
+Behandel korte tussenwerpsels zoals ja, nee, wacht, stop en oké als normale gesprekssignalen.
+Noem jezelf niet ChatGPT tenzij de gebruiker daar expliciet naar vraagt.`;
 
 function send(res, status, body, type = 'text/plain; charset=utf-8') {
   res.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store' });
@@ -46,7 +56,19 @@ const server = http.createServer(async (req, res) => {
         session: {
           model: MODEL,
           instructions,
-          audio: { output: { voice: 'marin' } }
+          audio: {
+            input: {
+              noise_reduction: { type: 'far_field' },
+              turn_detection: {
+                type: 'server_vad',
+                create_response: true,
+                interrupt_response: true,
+                prefix_padding_ms: 300,
+                silence_duration_ms: 550
+              }
+            },
+            output: { voice: 'marin' }
+          }
         },
         transport: { type: 'webrtc', sdp }
       }),

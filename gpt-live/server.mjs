@@ -8,17 +8,16 @@ const PORT = Number(process.env.PORT || 8787);
 const MODEL = 'gpt-live-1';
 const API_KEY = process.env.OPENAI_API_KEY?.trim();
 const root = path.dirname(fileURLToPath(import.meta.url));
-
-const instructions = `Je bent Microduck, een kleine vriendelijke robot-eend en een natuurlijke gesprekspartner.
-Praat standaard Nederlands, tenzij de gebruiker duidelijk een andere taal kiest.
-Antwoord meestal in 1 tot 3 korte zinnen. Geef alleen meer uitleg als de gebruiker daarom vraagt of als dat echt nodig is.
-Begin direct met het antwoord. Vermijd lange inleidingen, samenvattingen en afsluitende herhalingen.
-Herhaal niet wat de gebruiker zojuist zei en herhaal je eigen antwoord niet.
-Stel maximaal één vervolgvraag wanneer die echt nuttig is.
-Gebruik spreektaal die prettig klinkt wanneer ze hardop wordt uitgesproken.
-Als de gebruiker je onderbreekt, stop met je vorige gedachte en reageer direct op de nieuwe uitspraak.
-Behandel korte tussenwerpsels zoals ja, nee, wacht, stop en oké als normale gesprekssignalen.
-Noem jezelf niet ChatGPT tenzij de gebruiker daar expliciet naar vraagt.`;
+const instructions = [
+  'Je bent Microduck, een kleine vriendelijke robot-eend.',
+  'Praat standaard natuurlijk Nederlands, tenzij de gebruiker duidelijk een andere taal kiest.',
+  'Antwoord meestal in 1 tot 3 korte, spreekbare zinnen.',
+  'Herhaal jezelf niet en geef niet twee keer hetzelfde antwoord in andere woorden.',
+  'Stel alleen een vervolgvraag als die echt nodig of nuttig is.',
+  'Als de gebruiker je onderbreekt, stop met je vorige gedachte en reageer direct op de nieuwe boodschap.',
+  'Als de gebruiker alleen wacht, stop, oké of iets vergelijkbaars zegt, reageer kort en natuurlijk.',
+  'Doe niet alsof je een tekstchat bent en noem jezelf niet ChatGPT tenzij de gebruiker daar expliciet naar vraagt.'
+].join(' ');
 
 function send(res, status, body, type = 'text/plain; charset=utf-8') {
   res.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store' });
@@ -56,29 +55,25 @@ const server = http.createServer(async (req, res) => {
         session: {
           model: MODEL,
           instructions,
-          audio: {
-            input: {
-              noise_reduction: { type: 'far_field' },
-              turn_detection: {
-                type: 'server_vad',
-                create_response: true,
-                interrupt_response: true,
-                prefix_padding_ms: 300,
-                silence_duration_ms: 550
-              }
-            },
-            output: { voice: 'marin' }
-          }
+          audio: { output: { voice: 'marin' } }
         },
         transport: { type: 'webrtc', sdp }
       }),
       signal: AbortSignal.timeout(30000)
     });
-    if (!upstream.ok) { send(res, 502, `GPT-Live sessie kon niet starten (HTTP ${upstream.status}).`); return; }
+    if (!upstream.ok) {
+      const detail = await upstream.text().catch(() => '');
+      console.error(`GPT-Live HTTP ${upstream.status}: ${detail}`);
+      send(res, 502, `GPT-Live sessie kon niet starten (HTTP ${upstream.status}).`);
+      return;
+    }
     const data = await upstream.json();
     if (!data?.transport?.sdp) { send(res, 502, 'GPT-Live gaf geen WebRTC-antwoord.'); return; }
     send(res, 200, data.transport.sdp, 'application/sdp');
-  } catch { send(res, 502, 'GPT-Live is niet bereikbaar.'); }
+  } catch (error) {
+    console.error('GPT-Live verbinding mislukt:', error);
+    send(res, 502, 'GPT-Live is niet bereikbaar.');
+  }
 });
 
 server.listen(PORT, HOST, () => {
